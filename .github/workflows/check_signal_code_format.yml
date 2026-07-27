@@ -23,6 +23,5 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          SHAREPOINT_DRIVE_ID: ${{ secrets.SHAREPOINT_DRIVE_ID }}
-          SHAREPOINT_FOLDER_ITEM_ID: ${{ secrets.SHAREPOINT_FOLDER_ITEM_ID }}
+          SHAREPOINT_FOLDER_LINK: ${{ secrets.SHAREPOINT_FOLDER_LINK }}
         run: python check_signal_code_format.py
