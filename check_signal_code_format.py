@@ -24,6 +24,7 @@ est ambiguë (chiffres manquants/en trop dans la date, code trop
 dégradé), la colonne reste vide : correction manuelle nécessaire.
 """
 
+import base64
 import csv
 import io
 import os
@@ -309,6 +310,21 @@ def graph_token(tenant_id, client_id, client_secret):
     return resp.json()["access_token"]
 
 
+def resolve_share_link(token, share_url):
+    """Résout un lien de partage SharePoint en (drive_id, item_id) via l'API Graph
+    /shares/{shareId}/driveItem (voir verify_maintenance_preventive.py pour le détail)."""
+    b64 = base64.b64encode(share_url.encode("utf-8")).decode("utf-8")
+    encoded = "u!" + b64.replace("+", "-").replace("/", "_").rstrip("=")
+    resp = requests.get(
+        f"https://graph.microsoft.com/v1.0/shares/{encoded}/driveItem",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    raise_for_status_verbose(resp)
+    data = resp.json()
+    return data["parentReference"]["driveId"], data["id"]
+
+
 def upload_to_sharepoint(token, drive_id, folder_item_id, file_path, file_name):
     """Dépose/écrase le fichier, en adressage 100% par ID. S'il n'existe pas encore, on crée
     d'abord un fichier vide dans le dossier (POST .../children), puis on écrit son contenu
@@ -356,8 +372,7 @@ def main():
     azure_client_id = os.environ["AZURE_CLIENT_ID"].strip()
     azure_client_secret = os.environ["AZURE_CLIENT_SECRET"].strip()
 
-    sharepoint_drive_id = os.environ["SHAREPOINT_DRIVE_ID"].strip()
-    sharepoint_folder_item_id = os.environ["SHAREPOINT_FOLDER_ITEM_ID"].strip()
+    sharepoint_folder_link = os.environ["SHAREPOINT_FOLDER_LINK"].strip()
 
     print("Authentification mWater...")
     client_id = mwater_login(mwater_username, mwater_password)
@@ -376,6 +391,9 @@ def main():
 
     print("Authentification Microsoft Graph...")
     token = graph_token(azure_tenant_id, azure_client_id, azure_client_secret)
+
+    print("Résolution du lien SharePoint...")
+    sharepoint_drive_id, sharepoint_folder_item_id = resolve_share_link(token, sharepoint_folder_link)
 
     print("Téléchargement du log existant sur SharePoint...")
     existing_rows = download_existing_log(token, sharepoint_drive_id, sharepoint_folder_item_id, LOG_FILE_NAME)

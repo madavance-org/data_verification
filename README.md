@@ -32,16 +32,15 @@ Si le fichier n'existe pas encore sur SharePoint (première exécution), le scri
 | `AZURE_TENANT_ID` | Même App Registration que le repo `mWater_backup` ("BackupOffice365") |
 | `AZURE_CLIENT_ID` | idem |
 | `AZURE_CLIENT_SECRET` | idem — généré dans Entra ID, valeur connue uniquement dans GitHub Secrets |
-| `SHAREPOINT_DRIVE_ID` | Cible définitive : dossier [Vérification des données](https://madavancengo.sharepoint.com/:f:/s/ITMadAvance/IgAwR3jEg9UMT7JcKHJAeQttAXCrIid1qcCeAEtuxAPEdNU). **Valeur temporaire de test** (même site `ITMadAvance` que le backup) : `b!8D4xOy74F0-I2pDx1b5rX8HkGdhgNxpGpD3JvyEKMY4-rXDAT44VQ40NYtVFZG-V` |
-| `SHAREPOINT_FOLDER_ITEM_ID` | Cible définitive : à résoudre (voir ci-dessous). **Valeur temporaire de test** : `01T5F36LFRTB6Z2I6KHNHLORRAGKD554ZL` (dossier "Backup" du repo `mWater_backup` — le rapport de test y atterrira, à déplacer/nettoyer ensuite) |
+| `SHAREPOINT_FOLDER_LINK` | Lien de partage SharePoint du dossier cible, collé tel quel (ex. `https://madavancengo.sharepoint.com/:f:/s/ITMadAvance/...`). **Ne pas** essayer de le convertir en `driveId`/`itemId` à la main — le script le résout lui-même à chaque exécution via `/shares/{shareId}/driveItem`. |
 | `EMAIL_SENDER` | Boîte d'envoi (ex. `it@madavance.org`) |
 | `EMAIL_RECIPIENTS` | Destinataire(s), séparés par des virgules |
 
 Ces secrets ne sont pas partagés automatiquement entre repos GitHub : même si `AZURE_TENANT_ID`/`AZURE_CLIENT_ID`/`AZURE_CLIENT_SECRET` existent déjà dans `mWater_backup`, il faut les recopier dans les secrets de **ce** repo.
 
-### Résoudre `SHAREPOINT_DRIVE_ID` / `SHAREPOINT_FOLDER_ITEM_ID`
+### `SHAREPOINT_FOLDER_LINK`
 
-Le dossier cible a été partagé via un lien de partage, pas un chemin direct. Comme pour le backup, l'adressage par chemin (`/sites/{id}/drive/root:/{chemin}`) est cassé sur ce tenant (`400 Resource not found for the segment 'root:'`) — il faut résoudre le lien en `driveId` + ID d'item via l'API Graph `/shares/{shareId}/driveItem`, ou via Graph Explorer par navigation. Non résolu à ce stade (nécessite une session Microsoft 365 authentifiée) — à compléter avant la première exécution.
+Historique : on utilisait auparavant deux secrets séparés (`SHAREPOINT_DRIVE_ID` / `SHAREPOINT_FOLDER_ITEM_ID`), à résoudre manuellement à partir du lien de partage. Source de bugs (mauvaise valeur collée par erreur, un lien au lieu d'un ID). Le script résout maintenant directement le lien de partage au démarrage — un seul secret à renseigner, moins d'erreur possible.
 
 ## Datagrids mWater utilisés (IDs codés en dur dans le script, pas des secrets)
 

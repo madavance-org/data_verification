@@ -26,6 +26,7 @@ Inspiré du repo `ITManagerMadAvance/mWater_backup` pour les mécanismes
 d'authentification mWater et Microsoft Graph.
 """
 
+import base64
 import csv
 import io
 import json
@@ -631,6 +632,24 @@ def graph_token(tenant_id, client_id, client_secret):
     return resp.json()["access_token"]
 
 
+def resolve_share_link(token, share_url):
+    """Résout un lien de partage SharePoint (ex. https://.../:f:/s/...) en (drive_id, item_id)
+    via l'API Graph /shares/{shareId}/driveItem. Évite d'avoir à extraire les IDs à la main :
+    il suffit de coller le lien de partage tel quel dans le secret SHAREPOINT_FOLDER_LINK."""
+    b64 = base64.b64encode(share_url.encode("utf-8")).decode("utf-8")
+    encoded = "u!" + b64.replace("+", "-").replace("/", "_").rstrip("=")
+    resp = requests.get(
+        f"https://graph.microsoft.com/v1.0/shares/{encoded}/driveItem",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    raise_for_status_verbose(resp)
+    data = resp.json()
+    drive_id = data["parentReference"]["driveId"]
+    item_id = data["id"]
+    return drive_id, item_id
+
+
 def upload_to_sharepoint(token, drive_id, folder_item_id, file_path, file_name):
     """Dépose/écrase le fichier, en adressage 100% par ID (voir note dans
     find_child_item_id). S'il n'existe pas encore, on crée d'abord un fichier vide dans le
@@ -706,8 +725,7 @@ def main():
     # .strip() défensif : un espace ou saut de ligne parasite collé dans un secret
     # GitHub Actions rend l'URL Graph mal formée et se traduit par un 400 "Invalid
     # request" plutôt qu'une erreur explicite.
-    sharepoint_drive_id = os.environ["SHAREPOINT_DRIVE_ID"].strip()
-    sharepoint_folder_item_id = os.environ["SHAREPOINT_FOLDER_ITEM_ID"].strip()
+    sharepoint_folder_link = os.environ["SHAREPOINT_FOLDER_LINK"].strip()
 
     email_sender = os.environ["EMAIL_SENDER"].strip()
     email_recipients = os.environ["EMAIL_RECIPIENTS"].strip()
@@ -735,6 +753,9 @@ def main():
 
     print("Authentification Microsoft Graph...")
     token = graph_token(azure_tenant_id, azure_client_id, azure_client_secret)
+
+    print("Résolution du lien SharePoint...")
+    sharepoint_drive_id, sharepoint_folder_item_id = resolve_share_link(token, sharepoint_folder_link)
 
     print("Téléchargement du log existant sur SharePoint...")
     existing_rows = download_existing_log(token, sharepoint_drive_id, sharepoint_folder_item_id, LOG_FILE_NAME)
