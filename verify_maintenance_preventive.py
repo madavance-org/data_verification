@@ -657,18 +657,21 @@ def send_confirmation_email(token, sender, recipients, file_name, open_count, ne
 # ---------------------------------------------------------------------------
 
 def main():
-    mwater_username = os.environ["MWATER_USERNAME"]
-    mwater_password = os.environ["MWATER_PASSWORD"]
+    mwater_username = os.environ["MWATER_USERNAME"].strip()
+    mwater_password = os.environ["MWATER_PASSWORD"].strip()
 
-    azure_tenant_id = os.environ["AZURE_TENANT_ID"]
-    azure_client_id = os.environ["AZURE_CLIENT_ID"]
-    azure_client_secret = os.environ["AZURE_CLIENT_SECRET"]
+    azure_tenant_id = os.environ["AZURE_TENANT_ID"].strip()
+    azure_client_id = os.environ["AZURE_CLIENT_ID"].strip()
+    azure_client_secret = os.environ["AZURE_CLIENT_SECRET"].strip()
 
-    sharepoint_drive_id = os.environ["SHAREPOINT_DRIVE_ID"]
-    sharepoint_folder_item_id = os.environ["SHAREPOINT_FOLDER_ITEM_ID"]
+    # .strip() défensif : un espace ou saut de ligne parasite collé dans un secret
+    # GitHub Actions rend l'URL Graph mal formée et se traduit par un 400 "Invalid
+    # request" plutôt qu'une erreur explicite.
+    sharepoint_drive_id = os.environ["SHAREPOINT_DRIVE_ID"].strip()
+    sharepoint_folder_item_id = os.environ["SHAREPOINT_FOLDER_ITEM_ID"].strip()
 
-    email_sender = os.environ["EMAIL_SENDER"]
-    email_recipients = os.environ["EMAIL_RECIPIENTS"]
+    email_sender = os.environ["EMAIL_SENDER"].strip()
+    email_recipients = os.environ["EMAIL_RECIPIENTS"].strip()
 
     print("Authentification mWater...")
     client_id = mwater_login(mwater_username, mwater_password)
