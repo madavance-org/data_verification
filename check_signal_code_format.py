@@ -182,7 +182,6 @@ def find_child_item_id(token, drive_id, folder_item_id, file_name):
     resp = requests.get(
         f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{folder_item_id}/children",
         headers={"Authorization": f"Bearer {token}"},
-        params={"$select": "id,name"},
         timeout=60,
     )
     raise_for_status_verbose(resp)
