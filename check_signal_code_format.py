@@ -176,14 +176,32 @@ def anomaly_key(a):
     return (a["Formulaire"], a["Response Code"])
 
 
-def download_existing_log(token, drive_id, folder_item_id, file_name):
+def find_child_item_id(token, drive_id, folder_item_id, file_name):
+    """Cherche un fichier par nom parmi les enfants d'un dossier, en adressage 100% par ID
+    (voir verify_maintenance_preventive.py pour le détail du problème contourné)."""
     resp = requests.get(
-        f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{folder_item_id}:/{file_name}:/content",
+        f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{folder_item_id}/children",
+        headers={"Authorization": f"Bearer {token}"},
+        params={"$select": "id,name"},
+        timeout=60,
+    )
+    raise_for_status_verbose(resp)
+    for item in resp.json().get("value", []):
+        if item.get("name") == file_name:
+            return item.get("id")
+    return None
+
+
+def download_existing_log(token, drive_id, folder_item_id, file_name):
+    item_id = find_child_item_id(token, drive_id, folder_item_id, file_name)
+    if not item_id:
+        return []
+
+    resp = requests.get(
+        f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{item_id}/content",
         headers={"Authorization": f"Bearer {token}"},
         timeout=60,
     )
-    if resp.status_code == 404:
-        return []
     raise_for_status_verbose(resp)
 
     from openpyxl import load_workbook
@@ -293,10 +311,29 @@ def graph_token(tenant_id, client_id, client_secret):
 
 
 def upload_to_sharepoint(token, drive_id, folder_item_id, file_path, file_name):
+    """Dépose/écrase le fichier, en adressage 100% par ID. S'il n'existe pas encore, on crée
+    d'abord un fichier vide dans le dossier (POST .../children), puis on écrit son contenu
+    par ID (voir verify_maintenance_preventive.py pour le détail du problème contourné)."""
     with open(file_path, "rb") as f:
         content = f.read()
+
+    item_id = find_child_item_id(token, drive_id, folder_item_id, file_name)
+    if not item_id:
+        resp = requests.post(
+            f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{folder_item_id}/children",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "name": file_name,
+                "file": {},
+                "@microsoft.graph.conflictBehavior": "replace",
+            },
+            timeout=60,
+        )
+        raise_for_status_verbose(resp)
+        item_id = resp.json()["id"]
+
     resp = requests.put(
-        f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{folder_item_id}:/{file_name}:/content",
+        f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{item_id}/content",
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/octet-stream",
