@@ -536,24 +536,29 @@ def build_signal_code_lookups(appel_rows, maintenance_rows, reparation_rows):
 
 
 def merge_with_log(current_anomalies, existing_rows, today_str, submitted_on_lookup=None,
-                    signal_lookups=None):
+                    signal_lookups=None, existing_response_codes=None):
     """Fusionne les anomalies détectées aujourd'hui avec le log existant :
     - toujours présente -> Statut 'Toujours ouvert', Dernière détection mise à jour
     - nouvelle -> Statut 'Nouveau'
-    - présente avant mais plus détectée aujourd'hui -> Statut 'Résolu', avec pour date de
-      résolution le Submitted On de la réponse si connu (date réelle de la correction dans
-      mWater), sinon la date d'exécution du script en repli
-    - déjà marquée 'Résolu' avant -> conservée telle quelle (historique)
+    - présente avant mais plus détectée aujourd'hui, réponse toujours présente dans mWater ->
+      Statut 'Résolu' (le contenu a été corrigé), avec pour date de résolution le Submitted On
+      de la réponse si connu (date réelle de la correction dans mWater), sinon la date
+      d'exécution du script en repli
+    - présente avant mais plus détectée aujourd'hui, réponse absente du datagrid Appel -> Statut
+      'Supprimé' (la réponse elle-même a disparu de mWater, ce n'est pas une correction) ; pas de
+      date de résolution réelle dans ce cas, on reprend donc la Première détection
+    - déjà marquée 'Résolu' ou 'Supprimé' avant -> conservée telle quelle (historique)
     """
     submitted_on_lookup = submitted_on_lookup or {}
     signal_by_rc, maint_idx, rep_idx = signal_lookups or ({}, {}, {})
+    existing_response_codes = existing_response_codes or set()
     existing_open = {}
-    already_resolved = []
+    already_closed = []
     for row in existing_rows:
         key = (row.get("Dimension"), row.get("Sous-dimension"), row.get("Response Code"),
                row.get("Description"), row.get("Water Point ID"))
-        if row.get("Statut") == "Résolu":
-            already_resolved.append(row)
+        if row.get("Statut") in ("Résolu", "Supprimé"):
+            already_closed.append(row)
         else:
             existing_open[key] = row
 
@@ -585,16 +590,22 @@ def merge_with_log(current_anomalies, existing_rows, today_str, submitted_on_loo
         })
 
     resolved_count = 0
+    deleted_count = 0
     for key, row in existing_open.items():
         if key not in seen_keys:
             row = dict(row)
-            row["Statut"] = "Résolu"
-            row["Date de résolution"] = submitted_on_lookup.get(row.get("Response Code"), today_str)
+            if row.get("Response Code") not in existing_response_codes:
+                row["Statut"] = "Supprimé"
+                row["Date de résolution"] = row.get("Première détection", "")
+                deleted_count += 1
+            else:
+                row["Statut"] = "Résolu"
+                row["Date de résolution"] = submitted_on_lookup.get(row.get("Response Code"), today_str)
+                resolved_count += 1
             merged.append(row)
-            resolved_count += 1
 
-    merged.extend(already_resolved)
-    return merged, new_count, resolved_count
+    merged.extend(already_closed)
+    return merged, new_count, resolved_count, deleted_count
 
 
 def build_log_report(merged_rows, output_path):
@@ -612,7 +623,7 @@ def build_log_report(merged_rows, output_path):
         ws.append([row.get(h, "") for h in LOG_HEADERS])
 
     # Onglet résumé : uniquement les anomalies actuellement ouvertes (Nouveau + Toujours ouvert)
-    open_rows = [r for r in merged_rows if r.get("Statut") != "Résolu"]
+    open_rows = [r for r in merged_rows if r.get("Statut") not in ("Résolu", "Supprimé")]
     summary = wb.create_sheet("Résumé")
     summary.append(["Dimension", "Nombre d'anomalies ouvertes"])
     for cell in summary[1]:
@@ -698,12 +709,13 @@ def upload_to_sharepoint(token, drive_id, folder_item_id, file_path, file_name):
 
 
 def send_confirmation_email(token, sender, recipients, file_name, open_count, new_count,
-                             resolved_count, counts_by_dimension):
+                             resolved_count, deleted_count, counts_by_dimension):
     lines = "".join(f"<li>{dim} : {n}</li>" for dim, n in counts_by_dimension.items())
     body_html = (
         f"<p>Vérification de données \"Appel maintenance préventive\" exécutée.</p>"
         f"<p>Anomalies actuellement ouvertes : <b>{open_count}</b> "
-        f"(dont {new_count} nouvelles) — {resolved_count} résolue(s) depuis la dernière exécution.</p>"
+        f"(dont {new_count} nouvelles) — {resolved_count} résolue(s) et {deleted_count} "
+        f"supprimée(s) (réponse mWater disparue) depuis la dernière exécution.</p>"
         f"<ul>{lines}</ul>"
         f"<p>Log mis à jour sur SharePoint : <b>{file_name}</b></p>"
     )
@@ -776,11 +788,14 @@ def main():
     today_str = datetime.now().strftime("%d/%m/%Y")
     submitted_on_lookup = build_submitted_on_lookup(appel_rows)
     signal_lookups = build_signal_code_lookups(appel_rows, maintenance_rows, reparation_rows)
-    merged_rows, new_count, resolved_count = merge_with_log(
+    existing_response_codes = {r.get("Response Code", "") for r in appel_rows}
+    merged_rows, new_count, resolved_count, deleted_count = merge_with_log(
         anomalies, existing_rows, today_str,
-        submitted_on_lookup=submitted_on_lookup, signal_lookups=signal_lookups)
-    open_rows = [r for r in merged_rows if r.get("Statut") != "Résolu"]
-    print(f"  {len(open_rows)} anomalies ouvertes ({new_count} nouvelles, {resolved_count} résolues)")
+        submitted_on_lookup=submitted_on_lookup, signal_lookups=signal_lookups,
+        existing_response_codes=existing_response_codes)
+    open_rows = [r for r in merged_rows if r.get("Statut") not in ("Résolu", "Supprimé")]
+    print(f"  {len(open_rows)} anomalies ouvertes ({new_count} nouvelles, {resolved_count} résolues, "
+          f"{deleted_count} supprimées)")
 
     output_path = f"/tmp/{LOG_FILE_NAME}"
     build_log_report(merged_rows, output_path)
@@ -792,7 +807,7 @@ def main():
     print("Envoi de l'email de confirmation...")
     counts_by_dimension = Counter(r.get("Dimension") for r in open_rows)
     send_confirmation_email(token, email_sender, email_recipients, LOG_FILE_NAME,
-                             len(open_rows), new_count, resolved_count, counts_by_dimension)
+                             len(open_rows), new_count, resolved_count, deleted_count, counts_by_dimension)
 
     print("Terminé.")
 
