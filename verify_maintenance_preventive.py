@@ -451,8 +451,19 @@ def check_fiabilite(appel_rows, rehab_rows):
 # ---------------------------------------------------------------------------
 
 def anomaly_key(a):
-    """Identifiant stable d'une anomalie à travers les exécutions successives."""
-    return (a.dimension, a.subdimension, a.response_code, a.description)
+    """Identifiant stable d'une anomalie à travers les exécutions successives.
+
+    Doit inclure Water Point ID : plusieurs points d'eau rattachés à la même réponse peuvent
+    partager exactement la même Dimension/Sous-dimension/Response Code/Description (ex. une
+    réponse en masse avec un Drafted On erroné, qui génère une anomalie identique pour chaque
+    point d'eau). Sans Water Point ID dans la clé, ces anomalies distinctes entrent en
+    collision dans existing_open (dict indexé par clé, voir merge_with_log) : chaque insertion
+    écrase la précédente, et les anomalies écrasées ne sont jamais marquées 'Résolu' ni
+    conservées — elles disparaissent silencieusement du log au run suivant. Cas réel constaté
+    le 29/07/2026 : 28 des 29 lignes "Promptitude" de Rindra_Madavance-DV7526 perdues de cette
+    façon lors du run qui a suivi leur correction dans mWater.
+    """
+    return (a.dimension, a.subdimension, a.response_code, a.description, a.water_point_id)
 
 
 def find_child_item_id(token, drive_id, folder_item_id, file_name):
@@ -539,7 +550,8 @@ def merge_with_log(current_anomalies, existing_rows, today_str, submitted_on_loo
     existing_open = {}
     already_resolved = []
     for row in existing_rows:
-        key = (row.get("Dimension"), row.get("Sous-dimension"), row.get("Response Code"), row.get("Description"))
+        key = (row.get("Dimension"), row.get("Sous-dimension"), row.get("Response Code"),
+               row.get("Description"), row.get("Water Point ID"))
         if row.get("Statut") == "Résolu":
             already_resolved.append(row)
         else:
