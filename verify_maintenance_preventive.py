@@ -117,6 +117,11 @@ def fetch_raw_responses_by_code(client_id, form_id, codes, chunk_size=200):
     répondu dont l'entité liée (ex. Water Point) a été supprimée : dans ce cas, le datagrid
     exporte le champ vide alors que la réponse contient bien une référence à une entité,
     visible dans le tableau `entities` de la réponse brute.
+
+    Renvoie {code: [réponses brutes]} — en liste, car un même Response Code peut correspondre à
+    plusieurs réponses distinctes (voir Rindra_Madavance-DV7526, où 29 réponses partagent le
+    même code) ; un dict à valeur unique perdrait silencieusement toutes les réponses sauf la
+    dernière traitée.
     """
     results = {}
     codes = [c for c in codes if c]
@@ -132,14 +137,84 @@ def fetch_raw_responses_by_code(client_id, form_id, codes, chunk_size=200):
         )
         raise_for_status_verbose(resp)
         for item in resp.json():
-            results[item.get("code")] = item
+            results.setdefault(item.get("code"), []).append(item)
     return results
 
 
-def has_entity_reference(raw_response, entity_type="water_point"):
+def extract_water_point_code(raw_response, entity_type="water_point"):
+    """Extrait le code de l'entité water_point référencée dans une réponse brute (tableau
+    `entities`), indépendamment de l'ID de question. None si aucune référence de ce type."""
     if not raw_response:
-        return False
-    return any(e.get("entityType") == entity_type for e in raw_response.get("entities", []))
+        return None
+    for entity in raw_response.get("entities", []):
+        if entity.get("entityType") == entity_type:
+            return entity.get("value")
+    return None
+
+
+def enrich_missing_water_point_ids(appel_rows, client_id):
+    """Pour les lignes 'Final' dont 'Water Point ID > Unique ID' ressort vide dans le datagrid,
+    retrouve le code brut réellement répondu (via l'API brute, tableau `entities`) et le
+    réinjecte dans la ligne, en mutant `appel_rows` sur place — pour que toutes les dimensions en
+    aval affichent ce code plutôt qu'un champ vide, qu'il s'agisse d'un point d'eau fusionné,
+    supprimé, ou simplement absent de l'export du jour.
+
+    Les réponses réellement non répondues ('Water Point ID (Don't Know)' = True, ou sans
+    référence entité du tout dans la donnée brute) restent inchangées — ce n'est pas leur cas.
+
+    Marque chaque ligne effectivement enrichie avec `r["_wp_enriched"] = True` (utile à
+    check_completude pour distinguer 'répondu mais introuvable' de 'vraiment jamais répondu',
+    puisque `wp` n'est plus vide dans les deux cas une fois cette fonction passée). Marquer la
+    ligne elle-même plutôt qu'un ensemble de Response Code est nécessaire : un même Response
+    Code peut correspondre à plusieurs lignes du datagrid (réponses dupliquées sous un même
+    code — voir Rindra_Madavance-DV7526), et une seule d'entre elles peut être concernée alors
+    que les autres ont déjà un Water Point ID valide ; indexer par code marquerait ces dernières
+    à tort.
+    """
+    candidates = [
+        r for r in appel_rows
+        if r.get("Status") == "Final"
+        and not (r.get("Water Point ID > Unique ID") or "").strip()
+        and (r.get("Water Point ID (Don't Know)") or "").strip().lower() != "true"
+    ]
+    if not candidates:
+        return
+
+    codes = sorted({r.get("Response Code", "") for r in candidates if r.get("Response Code")})
+    raw_by_code = fetch_raw_responses_by_code(client_id, FORM_APPEL, codes)
+
+    # Codes de point d'eau déjà résolus (colonne non vide) pour chaque Response Code, toutes
+    # lignes confondues — sert à identifier, parmi les réponses brutes partageant un même code
+    # dupliqué, celle(s) dont le point d'eau n'est PAS déjà comptabilisée ailleurs dans le
+    # datagrid, plutôt que d'assigner arbitrairement la même réponse brute à toutes les lignes
+    # candidates du même code.
+    already_resolved_by_rc = defaultdict(set)
+    for r in appel_rows:
+        rc = r.get("Response Code", "")
+        wp = (r.get("Water Point ID > Unique ID") or "").strip()
+        if rc and wp:
+            already_resolved_by_rc[rc].add(wp)
+
+    unassigned_by_rc = {}
+    for rc, raws in raw_by_code.items():
+        already = already_resolved_by_rc.get(rc, set())
+        pool = [raw for raw in raws if extract_water_point_code(raw) not in already]
+        unassigned_by_rc[rc] = pool
+
+    count = 0
+    for r in candidates:
+        rc = r.get("Response Code", "")
+        pool = unassigned_by_rc.get(rc) or []
+        if not pool:
+            continue
+        raw = pool.pop(0)
+        wp_code = extract_water_point_code(raw)
+        if wp_code:
+            r["Water Point ID > Unique ID"] = wp_code
+            r["_wp_enriched"] = True
+            already_resolved_by_rc[rc].add(wp_code)
+            count += 1
+    return count
 
 
 # ---------------------------------------------------------------------------
@@ -193,9 +268,12 @@ class Anomaly:
 # Dimension : Complétude
 # ---------------------------------------------------------------------------
 
-def check_completude(appel_rows, client_id=None):
+def check_completude(appel_rows):
+    """`appel_rows` est supposé déjà passé par `enrich_missing_water_point_ids` : un WP ID
+    toujours vide à ce stade est donc réellement non répondu (ou 'dontknow'), pas juste non
+    résolu dans le datagrid. Le marqueur `_wp_enriched` posé par cette fonction sert uniquement
+    à distinguer la description à afficher pour les lignes dont le WP ID a été comblé."""
     anomalies = []
-    ambiguous = []  # rows Final avec WP ID vide dans le datagrid : à désambiguïser via l'API brute
 
     for r in appel_rows:
         status = r.get("Status", "")
@@ -213,26 +291,18 @@ def check_completude(appel_rows, client_id=None):
             if dont_know:
                 # Réponse explicite "je ne sais pas" -> réponse valide, pas une anomalie.
                 continue
-            ambiguous.append(rc)
-
-    resolved = {}
-    if client_id and ambiguous:
-        raw = fetch_raw_responses_by_code(client_id, FORM_APPEL, ambiguous)
-        resolved = {code: has_entity_reference(raw.get(code)) for code in ambiguous}
-
-    for rc in ambiguous:
-        if resolved.get(rc):
-            # La réponse contient bien une référence à un Water Point, mais le datagrid
-            # l'exporte vide -> le site lié a probablement été supprimé/est inaccessible.
-            anomalies.append(Anomaly(
-                "Complétude", "Site associé supprimé/inaccessible", rc, "",
-                "Water Point ID répondu mais site associé supprimé ou inaccessible",
-                "Non résolu dans l'export mWater malgré une réponse valide (à vérifier dans le portail)",
-            ))
-        else:
             anomalies.append(Anomaly(
                 "Complétude", "Water Point ID manquant", rc, "",
                 "Réponse finalisée sans Water Point ID renseigné",
+            ))
+        elif status == "Final" and r.get("_wp_enriched"):
+            # WP ID vide dans le datagrid d'origine, mais une référence existait bel et bien
+            # dans la réponse brute (voir enrich_missing_water_point_ids) -> site supprimé,
+            # fusionné, ou autrement introuvable dans l'export du jour.
+            anomalies.append(Anomaly(
+                "Complétude", "Site associé supprimé/inaccessible", rc, wp,
+                "Water Point ID répondu mais site associé supprimé ou inaccessible",
+                f"Code référencé : {wp} — non résolu dans l'export mWater malgré une réponse valide (à vérifier dans le portail)",
             ))
     return anomalies
 
@@ -765,9 +835,13 @@ def main():
     print(f"  Appel: {len(appel_rows)} / Maintenance: {len(maintenance_rows)} / "
           f"Réparation: {len(reparation_rows)} / Réhabilitation: {len(rehab_rows)}")
 
+    print("Résolution des Water Point ID vides (site fusionné/supprimé mais réponse valide)...")
+    enriched_count = enrich_missing_water_point_ids(appel_rows, client_id)
+    print(f"  {enriched_count or 0} lignes enrichies avec leur code brut")
+
     print("Application des règles de vérification...")
     anomalies = []
-    anomalies += check_completude(appel_rows, client_id=client_id)
+    anomalies += check_completude(appel_rows)
     anomalies += check_promptitude(appel_rows)
     anomalies += check_validite(appel_rows)
     anomalies += check_unicite(appel_rows)
