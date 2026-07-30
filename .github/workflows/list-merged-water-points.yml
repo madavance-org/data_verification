@@ -1,0 +1,27 @@
+name: Liste des points d'eau fusionnés
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+
+      - name: Générer et déposer la liste
+        env:
+          MWATER_USERNAME: ${{ secrets.MWATER_USERNAME }}
+          MWATER_PASSWORD: ${{ secrets.MWATER_PASSWORD }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          MWATER_MERGES_FOLDER_LINK: ${{ secrets.MWATER_MERGES_FOLDER_LINK }}
+        run: python list_merged_water_points.py --csv "Clean Water - Water Point.csv" --upload
