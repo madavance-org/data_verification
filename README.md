@@ -76,3 +76,36 @@ python verify_maintenance_preventive.py
 Testé le 21/07/2026 sur un export réel des 4 datagrids (3073 réponses Appel, 732 Maintenance, 171 Réparation, 1688 Réhabilitation), après plusieurs corrections faites avec Lanja en cours de route (distinction site supprimé/Don't Know en Complétude, exclusion des rejets déjà corrigés en Unicité, etc.) : 299 anomalies détectées (Cohérence 186, Unicité 50, Promptitude 29, Complétude 33, Fiabilité 1). **À valider avec Lanja avant mise en production** : passer en revue un échantillon des anomalies de Cohérence "absent du formulaire" pour confirmer qu'il ne s'agit pas de faux positifs (ex. suivi encore en attente plutôt qu'anomalie réelle).
 
 La logique de log (Nouveau / Toujours ouvert / Résolu) a été testée par simulation de deux exécutions successives : les statuts et dates de première/dernière détection et de résolution se comportent comme attendu. Pas encore testée en conditions réelles sur deux exécutions GitHub Actions successives.
+
+---
+
+# Script `verify_carnet_de_bord.py` — Carnet de bord
+
+Vérification automatisée des données mWater pour l'activité **Carnet de bord** (suivi véhicules : trajets, carburant, lavage, entretien/maintenance, renouvellement de documents administratifs), sur cinq des six dimensions du Manuel de vérification de données MadAvance (Complétude, Promptitude, Validité, Unicité, Cohérence). La sixième, **Fiabilité**, n'est pas automatisée : elle consiste en un rapprochement documentaire (facture/fiche physique <-> saisie mWater), un contrôle manuel volontairement hors de portée du script (voir le manuel ClickUp lié).
+
+Même architecture que `verify_maintenance_preventive.py` : authentification mWater, téléchargement du datagrid (`d30af8d9ab7b4bb3b0aae2adbcce622f`, pas un secret), application des règles, fusion avec le log existant sur SharePoint (`data_verification_carnet_de_bord_log.xlsx`, fichier distinct du log Appel maintenance préventive), réenregistrement, puis email de confirmation. Exécution automatique hebdomadaire via GitHub Actions (lundi 07:00 UTC, décalé de 30 min par rapport à `verify.yml`), ou manuelle via `workflow_dispatch`. Réutilise les mêmes secrets GitHub Actions que `verify_maintenance_preventive.py` (voir tableau plus haut) — rien à ajouter.
+
+## Règles appliquées
+
+- **Complétude** : `Status = Draft` (brouillon jamais soumis).
+- **Promptitude** : `Drafted On <= Submitted On` ; date de l'événement (Heure de départ/arrivée pour un trajet, Date sinon) doit correspondre au même mois que `Drafted On`.
+- **Validité** : selon le type d'intervention — compteur d'arrivée >= compteur de départ (trajet), compteur/litres/prix/coût/montant strictement positifs, nouvelle date limite de validité postérieure à la date de saisie (renouvellement de documents). Egalement : position GPS (point de départ ou d'arrivée d'un trajet) renseignée sans valeur d'`accuracy` associée — la fiabilité de la position ne peut alors pas être établie, indépendamment de tout calcul de distance.
+- **Unicité** : deux saisies de trajet partageant le même compteur de départ, pour un même véhicule.
+- **Cohérence** :
+  - Compteur strictement croissant par véhicule, toutes interventions confondues et triées chronologiquement (exclut les dates dont le mois ne correspond pas à `Drafted On`, pour éviter qu'une date corrompue isolée ne fausse tout l'historique). Aucun filtre par ampleur de l'écart — un petit écart répété peut signaler une manipulation volontaire plutôt qu'une simple imprécision ; chaque anomalie indique le nombre total d'occurrences pour le véhicule.
+  - Noms de conducteur proches (similarité >= 0.82) signalés comme variante probable (faute de frappe).
+  - Distance compteur d'un trajet plausible dans l'absolu (< 2000 km, indépendamment du GPS).
+  - Distance GPS (vol d'oiseau) vs distance compteur, avec tolérance dynamique basée sur la précision (`accuracy`, en mètres) réellement rapportée par chaque point GPS — les appareils utilisés ont une précision très variable (jusqu'à ~16 km observés sur des relevés réels), un seuil fixe produit trop de faux positifs.
+
+## Test en local
+
+```bash
+pip install -r requirements.txt
+export MWATER_USERNAME=... MWATER_PASSWORD=...
+export AZURE_TENANT_ID=... AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=...
+export SHAREPOINT_FOLDER_LINK=...
+export EMAIL_SENDER=... EMAIL_RECIPIENTS=...
+python verify_carnet_de_bord.py
+```
+
+Plusieurs constantes restent provisoires, à affiner avec Lanja au fil de l'usage réel du script (voir commentaires dans le code) : `COMPTEUR_TRAJET_MAX_KM`, `GPS_ACCURACY_DEFAUT_M`, `GPS_TOLERANCE_MARGE`, `GPS_TOLERANCE_PLANCHER_KM`, `SIMILARITE_NOM_SEUIL`.
