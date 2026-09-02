@@ -98,7 +98,7 @@ Q_DATE_RESOLUTION = "c93d563571ac4f17b2a2278c6ae841be"
 STATUT_CHOICE_IDS = {
     "Nouveau": "A2dsjGf",
     "Toujours ouvert": "VD3AM6A",
-    "Resolu": "3znmNE5",
+    "Résolu": "3znmNE5",
     # "Supprime" n'a pas encore de choix correspondant dans le formulaire mWater -
     # ces lignes sont ignorees pour l'instant (voir avertissement a l'execution).
     # Ajouter ce choix dans le Portail si on veut les couvrir aussi.
