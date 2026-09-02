@@ -33,6 +33,7 @@ import json
 import os
 import re
 import sys
+import uuid
 from collections import Counter, defaultdict
 from datetime import datetime
 
@@ -108,6 +109,16 @@ STATUT_CHOICE_IDS = {
 # A COMPLETER une fois ce point d'eau cree dans mWater (voir echange avec Lanja du
 # 02/09/2026) - tant que c'est None, ces lignes sont ignorees avec un avertissement.
 POINT_EAU_INCONNU_ID = None  # ex. "abcd1234-....-....-....-............"
+
+# Deploiement du formulaire ("Appel maintenance preventive") et identifiant de
+# l'unique enumerateur autorise a soumettre dessus. Decouverts le 02/09/2026 en
+# testant en direct : l'API /v3/responses verifie que le champ "user" du document
+# soumis correspond a un enumerateur/admin de ce deploiement - PAS l'identite du
+# compte authentifie (client_id) qui envoie la requete. Donc on soumet toujours ces
+# reponses "au nom de" ce compte, quel que soit le compte de service utilise pour
+# s'authentifier (MWATER_USERNAME/PASSWORD).
+DEPLOYMENT_LOG_VERIFICATION = "3f4459208b1e42a8beb504565dfe6b24"
+ENUMERATEUR_LOG_VERIFICATION = "0336889caebc433d8ab0bba5dc919bed"
 
 
 def parse_log_date(value):
@@ -199,8 +210,12 @@ def build_mwater_log_response(row, client_id):
               file=sys.stderr)
         return None
 
+    # Le champ Site attend {"code": "<code du point d'eau>"} et pas l'UUID de
+    # l'entite (decouvert le 02/09/2026 en comparant avec une vraie soumission
+    # faite a la main dans le Portail) - entity_id ci-dessus sert uniquement a
+    # verifier que le point d'eau existe, water_point_id est ce qu'on envoie.
     data = {
-        Q_POINT_EAU: {"value": entity_id},
+        Q_POINT_EAU: {"value": {"code": water_point_id.strip()}},
         Q_SOUS_DIMENSION: {"value": row.get("Sous-dimension", "")},
         Q_RESPONSE_CODE: {"value": row.get("Response Code", "")},
         Q_DETAILS: {"value": details},
@@ -266,6 +281,19 @@ def fetch_existing_log_responses(client_id):
     return by_key
 
 
+def fetch_form_rev(form_id, client_id):
+    """Revision courante du formulaire (design._rev), a inclure dans chaque reponse
+    soumise (formRev) - evite de coder une valeur en dur qui deviendrait perimee si
+    le formulaire est modifie dans le Portail."""
+    resp = requests.get(
+        f"{MWATER_API_BASE}/forms/{form_id}",
+        params={"client": client_id},
+        timeout=30,
+    )
+    raise_for_status_verbose(resp)
+    return resp.json()["_rev"]
+
+
 def inserer_log_dans_mwater(merged_rows, client_id):
     """Pousse le log de verification dans le formulaire mWater dedie : cree une
     nouvelle reponse pour chaque ligne pas encore presente, met a jour celles qui
@@ -281,6 +309,7 @@ def inserer_log_dans_mwater(merged_rows, client_id):
     mWater en ecriture) - a valider via un declenchement manuel du workflow avant de
     considerer cette partie fiable."""
     print("Insertion du log dans mWater (formulaire de log dedie)...")
+    form_rev = fetch_form_rev(FORM_LOG_VERIFICATION, client_id)
     existing_by_code = fetch_existing_log_responses(client_id)  # cle (Response Code, Water Point ID)
 
     created, updated, ignored = 0, 0, 0
@@ -305,11 +334,26 @@ def inserer_log_dans_mwater(merged_rows, client_id):
         # mWater n'a pas de mise a jour separee : ni PUT ni PATCH ne fonctionnent
         # (404/500, teste et documente dans mwater-access-manager/app/mwater_client.py).
         # On envoie systematiquement un POST du document complet - avec _id pour mettre a
-        # jour une ligne existante (upsert), sans _id pour en creer une nouvelle - meme
+        # jour une ligne existante (upsert), _id genere pour en creer une nouvelle - meme
         # mecanisme deja utilise avec succes pour forms/datagrids/consoles.
-        document = {"form": FORM_LOG_VERIFICATION, "data": payload}
-        if response_id:
-            document["_id"] = response_id
+        #
+        # "user"/"deployment"/"status" sont obligatoires : sans "user" (identifiant de
+        # l'enumerateur autorise sur ce deploiement), mWater refuse l'insertion avec
+        # "Permission denied to insert" - meme avec un compte admin - decouvert le
+        # 02/09/2026 en comparant avec une vraie soumission faite a la main.
+        now = datetime.utcnow().isoformat() + "Z"
+        document = {
+            "_id": response_id or uuid.uuid4().hex,
+            "form": FORM_LOG_VERIFICATION,
+            "formRev": form_rev,
+            "deployment": DEPLOYMENT_LOG_VERIFICATION,
+            "user": ENUMERATEUR_LOG_VERIFICATION,
+            "status": "final",
+            "approvals": [],
+            "startedOn": now,
+            "submittedOn": now,
+            "data": payload,
+        }
         resp = requests.post(
             f"{MWATER_API_BASE}/responses",
             params={"client": client_id},
