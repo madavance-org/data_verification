@@ -180,9 +180,12 @@ def find_water_point_entity_id(water_point_id, client_id, cache={}):
 
 
 def build_mwater_log_response(row, client_id):
-    """Construit le payload de reponse mWater pour une ligne du log. Retourne None si
-    la ligne doit etre ignoree (statut non pris en charge par le formulaire, ou point
-    d'eau introuvable sans repli configure)."""
+    """Construit le payload de reponse mWater pour une ligne du log. Retourne None
+    seulement si le statut n'est pas pris en charge par le formulaire (le champ Site
+    est marque "obligatoire" dans le design du formulaire, mais teste le 02/09/2026 :
+    l'API accepte une soumission sans ce champ du tout, contrairement a la saisie
+    manuelle dans le Portail qui le bloque cote interface - donc on ne saute plus les
+    lignes sans point d'eau valide, on les insere juste sans Site)."""
     statut = row.get("Statut")
     choice_id = STATUT_CHOICE_IDS.get(statut)
     if not choice_id:
@@ -200,27 +203,19 @@ def build_mwater_log_response(row, client_id):
     if is_valid_water_point_id(water_point_id):
         entity_id = find_water_point_entity_id(water_point_id, client_id)
     details = row.get("Détails", "")
-    if not entity_id:
-        entity_id = POINT_EAU_INCONNU_ID
-        # Le champ Site ne peut accepter qu'un point d'eau reel (repli 'Inconnu'), mais on
-        # garde trace de la valeur d'origine dans Details plutot que de la perdre - utile pour
-        # une saisie fausse (ex. faute de frappe), different d'un champ simplement vide.
-        if water_point_id.strip():
-            note = "[Water Point ID saisi (invalide) : " + water_point_id.strip() + "]"
-            details = (details + "\n" + note) if details else note
-        # sinon (champ simplement vide) : rien a ajouter, on laisse Details tel quel
-    if not entity_id:
-        print(f"  [mWater log] ignore (Water Point ID '{water_point_id}' introuvable "
-              f"et pas de point d'eau de repli configure) : {row.get('Response Code')}",
-              file=sys.stderr)
-        return None
+    if not entity_id and water_point_id:
+        # ID present mais invalide/introuvable (ex. faute de frappe) : on garde trace
+        # de la valeur d'origine dans Details plutot que de la perdre. Si le champ est
+        # simplement vide, rien a ajouter - "Laisse les vides juste" (Lanja, 02/09/2026).
+        note = "[Water Point ID saisi (invalide) : " + water_point_id + "]"
+        details = (details + "\n" + note) if details else note
 
     # Le champ Site attend {"code": "<code du point d'eau>"} et pas l'UUID de
     # l'entite (decouvert le 02/09/2026 en comparant avec une vraie soumission
     # faite a la main dans le Portail) - entity_id ci-dessus sert uniquement a
-    # verifier que le point d'eau existe, water_point_id est ce qu'on envoie.
+    # verifier que le point d'eau existe. Pas de Site du tout quand entity_id est
+    # introuvable (voir POINT_EAU_INCONNU_ID plus haut : repli optionnel, pas obligatoire).
     data = {
-        Q_POINT_EAU: {"value": {"code": water_point_id.strip()}},
         Q_SOUS_DIMENSION: {"value": row.get("Sous-dimension", "")},
         Q_RESPONSE_CODE: {"value": row.get("Response Code", "")},
         Q_DETAILS: {"value": details},
@@ -228,6 +223,8 @@ def build_mwater_log_response(row, client_id):
         Q_PREMIERE_DETECTION: {"value": parse_log_date(row.get("Première détection"))},
         Q_DERNIERE_DETECTION: {"value": parse_log_date(row.get("Dernière détection"))},
     }
+    if entity_id:
+        data[Q_POINT_EAU] = {"value": {"code": water_point_id}}
     if row.get("Dimension"):
         data[Q_DIMENSION] = {"value": row["Dimension"]}
     if row.get("Description"):
