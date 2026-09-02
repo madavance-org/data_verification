@@ -200,9 +200,32 @@ def build_mwater_log_response(row, client_id):
     return {k: v for k, v in data.items() if v.get("value") not in (None, "")}
 
 
+def existing_log_response_key(item):
+    """Cle de correspondance (Response Code, Water Point ID) pour une reponse mWater deja
+    presente dans le formulaire de log - memes cle que anomaly_key() cote Excel (voir son
+    docstring : le Response Code seul n'est pas suffisant, plusieurs anomalies distinctes
+    peuvent le partager). Le Water Point ID est retrouve via le tableau `entities` de la
+    reponse brute (meme mecanisme que extract_water_point_code, deja utilise plus haut dans
+    ce fichier pour la meme raison), puisque le champ Site du formulaire ne restitue pas
+    directement le code d'origine dans `data`.
+
+    Limite connue : pour les lignes tombees sur le point d'eau 'Inconnu' de repli (Water
+    Point ID invalide/manquant a l'origine), le code stocke cote mWater est celui de
+    l'entite de repli, pas la valeur brute d'origine (vide ou invalide) - la correspondance
+    ne peut donc pas se faire pour ces lignes precises : chaque run les recreera plutot que
+    de les mettre a jour, ce qui accumulera des doublons dans mWater pour ces cas-la
+    specifiquement. A ameliorer plus tard si besoin (ex. stocker la valeur brute d'origine
+    dans un champ dedie du formulaire)."""
+    data = item.get("data", {})
+    rc = (data.get(Q_RESPONSE_CODE) or {}).get("value")
+    wp_code = extract_water_point_code(item)
+    return (rc, wp_code)
+
+
 def fetch_existing_log_responses(client_id):
-    """Recupere les reponses deja presentes dans le formulaire de log mWater,
-    indexees par Response Code (sert de cle de correspondance pour update vs create).
+    """Recupere les reponses deja presentes dans le formulaire de log mWater, indexees par
+    (Response Code, Water Point ID) - voir existing_log_response_key() - pour decider update
+    vs create sans ecraser des anomalies distinctes partageant le meme Response Code.
 
     NON TESTE en conditions reelles - endpoint/format a verifier au premier run."""
     resp = requests.get(
@@ -213,10 +236,9 @@ def fetch_existing_log_responses(client_id):
     raise_for_status_verbose(resp)
     by_key = {}
     for item in resp.json():
-        data = item.get("data", {})
-        rc = (data.get(Q_RESPONSE_CODE) or {}).get("value")
+        rc, _ = existing_log_response_key(item)
         if rc:
-            by_key[rc] = item["_id"]
+            by_key[existing_log_response_key(item)] = item["_id"]
     return by_key
 
 
@@ -235,7 +257,7 @@ def inserer_log_dans_mwater(merged_rows, client_id):
     mWater en ecriture) - a valider via un declenchement manuel du workflow avant de
     considerer cette partie fiable."""
     print("Insertion du log dans mWater (formulaire de log dedie)...")
-    existing_by_code = fetch_existing_log_responses(client_id)
+    existing_by_code = fetch_existing_log_responses(client_id)  # cle (Response Code, Water Point ID)
 
     created, updated, ignored = 0, 0, 0
     for row in merged_rows:
@@ -243,7 +265,8 @@ def inserer_log_dans_mwater(merged_rows, client_id):
         if payload is None:
             ignored += 1
             continue
-        response_id = existing_by_code.get(row.get("Response Code"))
+        row_key = (row.get("Response Code"), row.get("Water Point ID") or None)
+        response_id = existing_by_code.get(row_key)
         if response_id:
             resp = requests.put(
                 f"{MWATER_API_BASE}/responses/{response_id}",
