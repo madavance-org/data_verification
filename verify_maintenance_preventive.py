@@ -338,6 +338,31 @@ def raise_for_status_verbose(response):
 # mWater : authentification et téléchargement des datagrids
 # ---------------------------------------------------------------------------
 
+def identifier_compte_mwater(client_id):
+    """Diagnostic : cherche client_id dans le datagrid Users assignation
+    pour afficher a quel compte (username) il correspond."""
+    try:
+        resp = requests.get(
+            f"{MWATER_API_BASE}/datagrids/0bd7fb8357114e37a5201e7fcfe67b6a/download",
+            params={"client": client_id, "share": "", "extraFilters": "[]", "format": "csv"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        text = resp.content.decode("utf-8-sig")
+        reader = csv.DictReader(io.StringIO(text))
+        trouve = False
+        for row in reader:
+            uid = row.get("Unique Id") or row.get("Id") or row.get("_id") or ""
+            if uid.strip() == client_id:
+                trouve = True
+                print(f"  compte identifie : {row.get('Username', '?')} ({row.get('Given Name', '')} {row.get('Family Name', '')})")
+                break
+        if not trouve:
+            print("  compte non trouve dans le datagrid Users (client_id absent de la liste Unique Id)")
+    except Exception as exc:
+        print(f"  impossible d'identifier le compte : {exc}")
+
+
 def mwater_login(username, password):
     resp = requests.post(
         f"{MWATER_API_BASE}/clients",
@@ -1081,6 +1106,7 @@ def main():
     print("Authentification mWater...")
     client_id = mwater_login(mwater_username, mwater_password)
     print(f"  client_id obtenu : {client_id}")
+    identifier_compte_mwater(client_id)
 
     print("Téléchargement des datagrids...")
     appel_rows = download_datagrid(DATAGRID_APPEL, client_id)
