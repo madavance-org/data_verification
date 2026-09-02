@@ -339,28 +339,28 @@ def raise_for_status_verbose(response):
 # ---------------------------------------------------------------------------
 
 def identifier_compte_mwater(client_id):
-    """Diagnostic : cherche client_id dans le datagrid Users assignation
-    pour afficher a quel compte (username) il correspond."""
+    """Diagnostic : compare les droits en LECTURE et en ECRITURE sur le
+    formulaire de log, pour voir si le compte est mal identifie ou juste
+    limite en ecriture."""
     try:
         resp = requests.get(
-            f"{MWATER_API_BASE}/datagrids/0bd7fb8357114e37a5201e7fcfe67b6a/download",
-            params={"client": client_id, "share": "", "extraFilters": "[]", "format": "csv"},
+            f"{MWATER_API_BASE}/responses",
+            params={"client": client_id, "filter": json.dumps({"form": FORM_LOG_VERIFICATION}), "limit": 1},
             timeout=30,
         )
-        resp.raise_for_status()
-        text = resp.content.decode("utf-8-sig")
-        reader = csv.DictReader(io.StringIO(text))
-        trouve = False
-        for row in reader:
-            uid = row.get("Unique Id") or row.get("Id") or row.get("_id") or ""
-            if uid.strip() == client_id:
-                trouve = True
-                print(f"  compte identifie : {row.get('Username', '?')} ({row.get('Given Name', '')} {row.get('Family Name', '')})")
-                break
-        if not trouve:
-            print("  compte non trouve dans le datagrid Users (client_id absent de la liste Unique Id)")
+        print(f"  lecture (GET /responses) : HTTP {resp.status_code}")
     except Exception as exc:
-        print(f"  impossible d'identifier le compte : {exc}")
+        print(f"  lecture (GET /responses) : echec ({exc})")
+
+    try:
+        resp = requests.get(
+            f"{MWATER_API_BASE}/forms/{FORM_LOG_VERIFICATION}",
+            params={"client": client_id},
+            timeout=30,
+        )
+        print(f"  lecture design formulaire (GET /forms/<id>) : HTTP {resp.status_code}")
+    except Exception as exc:
+        print(f"  lecture design formulaire : echec ({exc})")
 
 
 def mwater_login(username, password):
