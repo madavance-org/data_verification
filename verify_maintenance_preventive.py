@@ -329,9 +329,17 @@ def inserer_log_dans_mwater(merged_rows, client_id):
         wp_id = str(row.get("Water Point ID") or "").strip()
         if is_valid_water_point_id(wp_id):
             row_key = (row.get("Response Code"), wp_id)
+            response_id = existing_by_code.get(row_key)
         else:
-            row_key = (row.get("Response Code"), None)
-        response_id = existing_by_code.get(row_key)
+            # Pas de Water Point ID valide -> Response Code seul ne suffit pas a
+            # distinguer les anomalies entre elles (plusieurs occurrences reelles et
+            # distinctes du meme signal peuvent le partager, vu le 02/09/2026 avec
+            # Lanja sur des cas comme "Etiennah MadAvance-DQQBXQ" : 22 detections
+            # hebdomadaires differentes, meme Response Code). Plutot que risquer de
+            # mettre a jour la mauvaise, on cree toujours une nouvelle entree pour
+            # ces cas - a ameliorer plus tard avec un critere fiable (ex. Premiere
+            # detection) une fois qu'un vrai usage (dashboard) en dependra.
+            response_id = None
 
         # mWater n'a pas de mise a jour separee : ni PUT ni PATCH ne fonctionnent
         # (404/500, teste et documente dans mwater-access-manager/app/mwater_client.py).
