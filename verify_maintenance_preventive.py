@@ -177,9 +177,8 @@ def build_mwater_log_response(row, client_id):
         # une saisie fausse (ex. faute de frappe), different d'un champ simplement vide.
         if water_point_id.strip():
             note = "[Water Point ID saisi (invalide) : " + water_point_id.strip() + "]"
-        else:
-            note = "[Water Point ID absent]"
-        details = (details + "\n" + note) if details else note
+            details = (details + "\n" + note) if details else note
+        # sinon (champ simplement vide) : rien a ajouter, on laisse Details tel quel
     if not entity_id:
         print(f"  [mWater log] ignore (Water Point ID '{water_point_id}' introuvable "
               f"et pas de point d'eau de repli configure) : {row.get('Response Code')}",
