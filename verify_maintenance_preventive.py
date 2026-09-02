@@ -190,7 +190,9 @@ def build_mwater_log_response(row, client_id):
               f"formulaire) : {row.get('Response Code')}", file=sys.stderr)
         return None
 
-    water_point_id = row.get("Water Point ID", "")
+    # .get(..., "") ne suffit pas : certaines lignes ont la cle presente avec une
+    # valeur explicite None (pas juste absente), d'ou le "or ''" en plus.
+    water_point_id = row.get("Water Point ID") or ""
     entity_id = None
     if is_valid_water_point_id(water_point_id):
         entity_id = find_water_point_entity_id(water_point_id, client_id)
