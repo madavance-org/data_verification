@@ -134,16 +134,19 @@ def find_water_point_entity_id(water_point_id, client_id, cache={}):
     pour eviter de refaire la requete pour chaque anomalie partageant le meme point
     d'eau.
 
-    NON TESTE en conditions reelles (acces API direct indisponible depuis la session
-    qui a ecrit ce code - a verifier au premier declenchement du workflow)."""
+    Endpoint et parametre confirmes par un test deja fait cote MadAvance (repo
+    mWater_backup, diagnostics/test_entities_endpoint.py et
+    test_entities_org_filter.py) : le type d'entite fait partie du chemin
+    (/v3/entities/water_point, pas /v3/entities?type=...), et le filtre se passe
+    via le parametre 'selector' (pas 'filter', qui est le nom utilise ailleurs
+    pour /v3/responses - deux conventions differentes chez mWater)."""
     if water_point_id in cache:
         return cache[water_point_id]
     resp = requests.get(
-        f"{MWATER_API_BASE}/entities",
+        f"{MWATER_API_BASE}/entities/water_point",
         params={
             "client": client_id,
-            "type": "water_point",
-            "filter": json.dumps({"code": water_point_id}),
+            "selector": json.dumps({"code": water_point_id}),
         },
         timeout=30,
     )
@@ -287,23 +290,25 @@ def inserer_log_dans_mwater(merged_rows, client_id):
         else:
             row_key = (row.get("Response Code"), None)
         response_id = existing_by_code.get(row_key)
+
+        # mWater n'a pas de mise a jour separee : ni PUT ni PATCH ne fonctionnent
+        # (404/500, teste et documente dans mwater-access-manager/app/mwater_client.py).
+        # On envoie systematiquement un POST du document complet - avec _id pour mettre a
+        # jour une ligne existante (upsert), sans _id pour en creer une nouvelle - meme
+        # mecanisme deja utilise avec succes pour forms/datagrids/consoles.
+        document = {"form": FORM_LOG_VERIFICATION, "data": payload}
         if response_id:
-            resp = requests.put(
-                f"{MWATER_API_BASE}/responses/{response_id}",
-                params={"client": client_id},
-                json={"data": payload},
-                timeout=30,
-            )
-            raise_for_status_verbose(resp)
+            document["_id"] = response_id
+        resp = requests.post(
+            f"{MWATER_API_BASE}/responses",
+            params={"client": client_id},
+            json=document,
+            timeout=30,
+        )
+        raise_for_status_verbose(resp)
+        if response_id:
             updated += 1
         else:
-            resp = requests.post(
-                f"{MWATER_API_BASE}/responses",
-                params={"client": client_id},
-                json={"form": FORM_LOG_VERIFICATION, "data": payload},
-                timeout=30,
-            )
-            raise_for_status_verbose(resp)
             created += 1
 
     print(f"  mWater : {created} creees, {updated} mises a jour, {ignored} ignorees")
