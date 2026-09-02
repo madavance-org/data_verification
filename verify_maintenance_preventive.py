@@ -219,6 +219,8 @@ def existing_log_response_key(item):
     data = item.get("data", {})
     rc = (data.get(Q_RESPONSE_CODE) or {}).get("value")
     wp_code = extract_water_point_code(item)
+    if not is_valid_water_point_id(wp_code or ""):
+        wp_code = None
     return (rc, wp_code)
 
 
@@ -265,7 +267,17 @@ def inserer_log_dans_mwater(merged_rows, client_id):
         if payload is None:
             ignored += 1
             continue
-        row_key = (row.get("Response Code"), row.get("Water Point ID") or None)
+        # Cle de correspondance : Response Code + Water Point ID quand celui-ci est valide
+        # (evite la collision documentee plus haut). Quand il ne l'est pas (point d'eau
+        # 'Inconnu' de repli), il n'apporte aucune distinction utile de toute facon - on
+        # retombe alors sur Response Code seul, pour au moins mettre a jour au lieu de
+        # dupliquer a chaque run (risque residuel plus rare : deux anomalies sans ID valide
+        # partageant le meme Response Code).
+        wp_id = row.get("Water Point ID") or ""
+        if is_valid_water_point_id(wp_id):
+            row_key = (row.get("Response Code"), wp_id)
+        else:
+            row_key = (row.get("Response Code"), None)
         response_id = existing_by_code.get(row_key)
         if response_id:
             resp = requests.put(
