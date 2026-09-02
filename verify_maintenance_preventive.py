@@ -169,8 +169,17 @@ def build_mwater_log_response(row, client_id):
     entity_id = None
     if is_valid_water_point_id(water_point_id):
         entity_id = find_water_point_entity_id(water_point_id, client_id)
+    details = row.get("Détails", "")
     if not entity_id:
         entity_id = POINT_EAU_INCONNU_ID
+        # Le champ Site ne peut accepter qu'un point d'eau reel (repli 'Inconnu'), mais on
+        # garde trace de la valeur d'origine dans Details plutot que de la perdre - utile pour
+        # une saisie fausse (ex. faute de frappe), different d'un champ simplement vide.
+        if water_point_id.strip():
+            note = "[Water Point ID saisi (invalide) : " + water_point_id.strip() + "]"
+        else:
+            note = "[Water Point ID absent]"
+        details = (details + "\n" + note) if details else note
     if not entity_id:
         print(f"  [mWater log] ignore (Water Point ID '{water_point_id}' introuvable "
               f"et pas de point d'eau de repli configure) : {row.get('Response Code')}",
@@ -181,7 +190,7 @@ def build_mwater_log_response(row, client_id):
         Q_POINT_EAU: {"value": entity_id},
         Q_SOUS_DIMENSION: {"value": row.get("Sous-dimension", "")},
         Q_RESPONSE_CODE: {"value": row.get("Response Code", "")},
-        Q_DETAILS: {"value": row.get("Détails", "")},
+        Q_DETAILS: {"value": details},
         Q_STATUT: {"value": choice_id},
         Q_PREMIERE_DETECTION: {"value": parse_log_date(row.get("Première détection"))},
         Q_DERNIERE_DETECTION: {"value": parse_log_date(row.get("Dernière détection"))},
