@@ -71,6 +71,201 @@ DEPLOYMENT_PREFIX_MAP = {
     "FTU": ["Fort-Dauphin", "Taolagnaro"],
 }
 
+# ---------------------------------------------------------------------------
+# mWater : insertion du log de verification dans un formulaire dedie
+# (ajoute le 02/09/2026 - le fichier Excel/SharePoint reste la source fiable,
+# ceci est une insertion supplementaire, non bloquante, pour alimenter un futur
+# Dashboard mWater)
+# ---------------------------------------------------------------------------
+
+# ID du formulaire "MadAvance || Verification de donnees || Formulaire || Actif"
+# (cree dans le Portail le 02/09/2026, pas un secret)
+FORM_LOG_VERIFICATION = "1febfeabe8054be6979350b81d1652fe"
+
+# Codes des questions du formulaire (voir design du formulaire dans le Portail)
+Q_POINT_EAU = "663f2f64c91f48a69bdf45909498109c"       # Site, obligatoire
+Q_DIMENSION = "40e7a60a2c6b41589313e72f816cdcb5"
+Q_SOUS_DIMENSION = "1ba451d29b91404f8c9d16a3e8d08cd4"
+Q_RESPONSE_CODE = "cd92c27826674193ac4b35bf5198a167"
+Q_DESCRIPTION = "f9adfa4bb56c4e16afc4fd1628839512"
+Q_DETAILS = "01e0435d0c3543939c573e9292423eaf"
+Q_STATUT = "de575ee83a0141119161cc0c96b496f2"
+Q_PREMIERE_DETECTION = "5c20dbea032a4cfebcc1d4b7db62f455"
+Q_DERNIERE_DETECTION = "ff5e64c0168649f2b72643a732e67349"
+Q_DATE_RESOLUTION = "c93d563571ac4f17b2a2278c6ae841be"
+
+STATUT_CHOICE_IDS = {
+    "Nouveau": "A2dsjGf",
+    "Toujours ouvert": "VD3AM6A",
+    "Resolu": "3znmNE5",
+    # "Supprime" n'a pas encore de choix correspondant dans le formulaire mWater -
+    # ces lignes sont ignorees pour l'instant (voir avertissement a l'execution).
+    # Ajouter ce choix dans le Portail si on veut les couvrir aussi.
+}
+
+# ID du point d'eau "Inconnu" de repli, pour les anomalies dont le Water Point ID
+# est invalide/manquant (le champ du formulaire est un vrai champ Site, obligatoire).
+# A COMPLETER une fois ce point d'eau cree dans mWater (voir echange avec Lanja du
+# 02/09/2026) - tant que c'est None, ces lignes sont ignorees avec un avertissement.
+POINT_EAU_INCONNU_ID = None  # ex. "abcd1234-....-....-....-............"
+
+
+def parse_log_date(value):
+    """Convertit une date du log ('JJ/MM/AAAA') en 'AAAA-MM-JJ' pour l'API mWater.
+    Retourne None si vide/invalide (le champ ne sera alors pas envoye)."""
+    value = (value or "").strip()
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%d/%m/%Y").strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def is_valid_water_point_id(water_point_id):
+    """Meme regle que la dimension Validite : un Water Point ID exploitable comme
+    reference Site doit etre numerique."""
+    return bool(water_point_id) and water_point_id.strip().isdigit()
+
+
+def find_water_point_entity_id(water_point_id, client_id, cache={}):
+    """Resout un Water Point ID (le 'code' mWater, ex. '1124056539') vers l'_id
+    d'entite attendu par le champ Site du formulaire. Mis en cache (par execution)
+    pour eviter de refaire la requete pour chaque anomalie partageant le meme point
+    d'eau.
+
+    NON TESTE en conditions reelles (acces API direct indisponible depuis la session
+    qui a ecrit ce code - a verifier au premier declenchement du workflow)."""
+    if water_point_id in cache:
+        return cache[water_point_id]
+    resp = requests.get(
+        f"{MWATER_API_BASE}/entities",
+        params={
+            "client": client_id,
+            "type": "water_point",
+            "filter": json.dumps({"code": water_point_id}),
+        },
+        timeout=30,
+    )
+    raise_for_status_verbose(resp)
+    items = resp.json()
+    entity_id = items[0]["_id"] if items else None
+    cache[water_point_id] = entity_id
+    return entity_id
+
+
+def build_mwater_log_response(row, client_id):
+    """Construit le payload de reponse mWater pour une ligne du log. Retourne None si
+    la ligne doit etre ignoree (statut non pris en charge par le formulaire, ou point
+    d'eau introuvable sans repli configure)."""
+    statut = row.get("Statut")
+    choice_id = STATUT_CHOICE_IDS.get(statut)
+    if not choice_id:
+        print(f"  [mWater log] ignore (statut '{statut}' non pris en charge par le "
+              f"formulaire) : {row.get('Response Code')}", file=sys.stderr)
+        return None
+
+    water_point_id = row.get("Water Point ID", "")
+    entity_id = None
+    if is_valid_water_point_id(water_point_id):
+        entity_id = find_water_point_entity_id(water_point_id, client_id)
+    if not entity_id:
+        entity_id = POINT_EAU_INCONNU_ID
+    if not entity_id:
+        print(f"  [mWater log] ignore (Water Point ID '{water_point_id}' introuvable "
+              f"et pas de point d'eau de repli configure) : {row.get('Response Code')}",
+              file=sys.stderr)
+        return None
+
+    data = {
+        Q_POINT_EAU: {"value": entity_id},
+        Q_SOUS_DIMENSION: {"value": row.get("Sous-dimension", "")},
+        Q_RESPONSE_CODE: {"value": row.get("Response Code", "")},
+        Q_DETAILS: {"value": row.get("Détails", "")},
+        Q_STATUT: {"value": choice_id},
+        Q_PREMIERE_DETECTION: {"value": parse_log_date(row.get("Première détection"))},
+        Q_DERNIERE_DETECTION: {"value": parse_log_date(row.get("Dernière détection"))},
+    }
+    if row.get("Dimension"):
+        data[Q_DIMENSION] = {"value": row["Dimension"]}
+    if row.get("Description"):
+        data[Q_DESCRIPTION] = {"value": row["Description"]}
+    date_resolution = parse_log_date(row.get("Date de résolution"))
+    if date_resolution:
+        data[Q_DATE_RESOLUTION] = {"value": date_resolution}
+    # NB : "Date de resolution" est actuellement obligatoire dans le formulaire mWater.
+    # Tant qu'il n'est pas rendu facultatif dans le Portail, la soumission des lignes
+    # encore ouvertes (sans date de resolution) echouera cote API - a corriger dans le
+    # Portail avant le premier vrai run.
+    return {k: v for k, v in data.items() if v.get("value") not in (None, "")}
+
+
+def fetch_existing_log_responses(client_id):
+    """Recupere les reponses deja presentes dans le formulaire de log mWater,
+    indexees par Response Code (sert de cle de correspondance pour update vs create).
+
+    NON TESTE en conditions reelles - endpoint/format a verifier au premier run."""
+    resp = requests.get(
+        f"{MWATER_API_BASE}/responses",
+        params={"client": client_id, "filter": json.dumps({"form": FORM_LOG_VERIFICATION})},
+        timeout=60,
+    )
+    raise_for_status_verbose(resp)
+    by_key = {}
+    for item in resp.json():
+        data = item.get("data", {})
+        rc = (data.get(Q_RESPONSE_CODE) or {}).get("value")
+        if rc:
+            by_key[rc] = item["_id"]
+    return by_key
+
+
+def inserer_log_dans_mwater(merged_rows, client_id):
+    """Pousse le log de verification dans le formulaire mWater dedie : cree une
+    nouvelle reponse pour chaque ligne pas encore presente, met a jour celles qui
+    existent deja (identifiees par Response Code). Ne touche JAMAIS aux donnees
+    mWater d'origine (Appel maintenance preventive, etc.) - uniquement au formulaire
+    de log lui-meme.
+
+    Non bloquant par construction de l'appelant (voir main() : entoure d'un
+    try/except) - une erreur ici ne doit jamais empecher la generation/depot du
+    fichier Excel, qui reste la source fiable.
+
+    NON TESTE de bout en bout (l'endroit qui a ecrit ce code n'a pas d'acces API
+    mWater en ecriture) - a valider via un declenchement manuel du workflow avant de
+    considerer cette partie fiable."""
+    print("Insertion du log dans mWater (formulaire de log dedie)...")
+    existing_by_code = fetch_existing_log_responses(client_id)
+
+    created, updated, ignored = 0, 0, 0
+    for row in merged_rows:
+        payload = build_mwater_log_response(row, client_id)
+        if payload is None:
+            ignored += 1
+            continue
+        response_id = existing_by_code.get(row.get("Response Code"))
+        if response_id:
+            resp = requests.put(
+                f"{MWATER_API_BASE}/responses/{response_id}",
+                params={"client": client_id},
+                json={"data": payload},
+                timeout=30,
+            )
+            raise_for_status_verbose(resp)
+            updated += 1
+        else:
+            resp = requests.post(
+                f"{MWATER_API_BASE}/responses",
+                params={"client": client_id},
+                json={"form": FORM_LOG_VERIFICATION, "data": payload},
+                timeout=30,
+            )
+            raise_for_status_verbose(resp)
+            created += 1
+
+    print(f"  mWater : {created} creees, {updated} mises a jour, {ignored} ignorees")
+
+
 
 def raise_for_status_verbose(response):
     """Comme dans backup_mwater.py : loggue le corps complet en cas d'erreur HTTP."""
@@ -870,6 +1065,13 @@ def main():
     open_rows = [r for r in merged_rows if r.get("Statut") not in ("Résolu", "Supprimé")]
     print(f"  {len(open_rows)} anomalies ouvertes ({new_count} nouvelles, {resolved_count} résolues, "
           f"{deleted_count} supprimées)")
+
+    try:
+        inserer_log_dans_mwater(merged_rows, client_id)
+    except Exception as exc:
+        print(f"AVERTISSEMENT : echec de l'insertion du log dans mWater ({exc}) - "
+              f"le fichier Excel reste la source fiable pour cette execution.",
+              file=sys.stderr)
 
     output_path = f"/tmp/{LOG_FILE_NAME}"
     build_log_report(merged_rows, output_path)
