@@ -191,8 +191,11 @@ def build_mwater_log_response(row, client_id):
         return None
 
     # .get(..., "") ne suffit pas : certaines lignes ont la cle presente avec une
-    # valeur explicite None (pas juste absente), d'ou le "or ''" en plus.
-    water_point_id = row.get("Water Point ID") or ""
+    # valeur explicite None (pas juste absente), d'ou le "or ''" en plus. Et le cast
+    # str(...) est indispensable : certaines valeurs arrivent en int/float depuis
+    # Excel, ce qui casse le JSON envoye a mWater (nombre au lieu de chaine dans le
+    # selector -> HTTP 500 cote serveur, vu en conditions reelles le 02/09/2026).
+    water_point_id = str(row.get("Water Point ID") or "").strip()
     entity_id = None
     if is_valid_water_point_id(water_point_id):
         entity_id = find_water_point_entity_id(water_point_id, client_id)
@@ -326,7 +329,7 @@ def inserer_log_dans_mwater(merged_rows, client_id):
         # retombe alors sur Response Code seul, pour au moins mettre a jour au lieu de
         # dupliquer a chaque run (risque residuel plus rare : deux anomalies sans ID valide
         # partageant le meme Response Code).
-        wp_id = row.get("Water Point ID") or ""
+        wp_id = str(row.get("Water Point ID") or "").strip()
         if is_valid_water_point_id(wp_id):
             row_key = (row.get("Response Code"), wp_id)
         else:
