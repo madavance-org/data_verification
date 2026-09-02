@@ -1080,6 +1080,7 @@ def main():
 
     print("Authentification mWater...")
     client_id = mwater_login(mwater_username, mwater_password)
+    print(f"  client_id obtenu : {client_id}")
 
     print("Téléchargement des datagrids...")
     appel_rows = download_datagrid(DATAGRID_APPEL, client_id)
