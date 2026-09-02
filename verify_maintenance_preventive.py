@@ -111,8 +111,17 @@ POINT_EAU_INCONNU_ID = None  # ex. "abcd1234-....-....-....-............"
 
 
 def parse_log_date(value):
-    """Convertit une date du log ('JJ/MM/AAAA') en 'AAAA-MM-JJ' pour l'API mWater.
-    Retourne None si vide/invalide (le champ ne sera alors pas envoye)."""
+    """Convertit une date du log en 'AAAA-MM-JJ' pour l'API mWater. Retourne None si
+    vide/invalide (le champ ne sera alors pas envoye).
+
+    Deux formes possibles en entree selon l'origine de la ligne : une chaine
+    'JJ/MM/AAAA' (ligne du jour, ecrite par ce script) OU un objet datetime/date
+    (ligne recuperee du fichier Excel existant via openpyxl, qui restitue les
+    cellules formatees comme dates directement en datetime.datetime, pas en texte)."""
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d")
+    if hasattr(value, "isoformat") and not isinstance(value, str):
+        return value.isoformat()
     value = (value or "").strip()
     if not value:
         return None
@@ -124,8 +133,10 @@ def parse_log_date(value):
 
 def is_valid_water_point_id(water_point_id):
     """Meme regle que la dimension Validite : un Water Point ID exploitable comme
-    reference Site doit etre numerique."""
-    return bool(water_point_id) and water_point_id.strip().isdigit()
+    reference Site doit etre numerique. str() defensif : les lignes reprises du log
+    Excel existant peuvent restituer certains champs dans un type inattendu."""
+    water_point_id = str(water_point_id or "").strip()
+    return water_point_id.isdigit()
 
 
 def find_water_point_entity_id(water_point_id, client_id, cache={}):
