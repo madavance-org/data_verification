@@ -431,16 +431,24 @@ def check_coherence(appel_rows, maintenance_rows, reparation_rows):
         found_in_reparation = signal_ref in reparation_idx
 
         if pump_state == "Partially" and not found_in_maintenance:
+            if found_in_reparation:
+                localisation = "trouvé dans Réparation après panne à la place"
+            else:
+                localisation = "introuvable dans Maintenance préventive et dans Réparation après panne"
             anomalies.append(Anomaly(
                 "Cohérence", "Présence dans le bon formulaire", rc, wp,
                 "Pompe 'Partiellement' fonctionnelle mais signal code absent du formulaire Maintenance préventive",
-                f"Signal reference : {signal_ref}",
+                f"Signal reference : {signal_ref} — {localisation}",
             ))
         elif pump_state == "No" and not found_in_reparation:
+            if found_in_maintenance:
+                localisation = "trouvé dans Maintenance préventive à la place"
+            else:
+                localisation = "introuvable dans Maintenance préventive et dans Réparation après panne"
             anomalies.append(Anomaly(
                 "Cohérence", "Présence dans le bon formulaire", rc, wp,
                 "Pompe 'Non' fonctionnelle mais signal code absent du formulaire Réparation après panne",
-                f"Signal reference : {signal_ref}",
+                f"Signal reference : {signal_ref} — {localisation}",
             ))
 
         # 3. Date du signal code <= date de l'activité (Completion date of the work)
@@ -888,3 +896,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
