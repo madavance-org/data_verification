@@ -60,7 +60,7 @@ LOG_FILE_NAME = "data_verification_call_log.xlsx"
 
 LOG_HEADERS = [
     "Dimension", "Sous-dimension", "Response Code", "Water Point ID",
-    "Description", "Détails", "Signal code", "Maintenance préventive",
+    "Description", "Champ concerné", "Détails", "Signal code", "Maintenance préventive",
     "Réparation après panne", "Statut", "Première détection",
     "Dernière détection", "Date de résolution",
 ]
@@ -203,6 +203,9 @@ def build_mwater_log_response(row, client_id):
     if is_valid_water_point_id(water_point_id):
         entity_id = find_water_point_entity_id(water_point_id, client_id)
     details = row.get("Détails", "")
+    champ_concerne = row.get("Champ concerné", "")
+    if champ_concerne:
+        details = f"{champ_concerne} — {details}" if details else champ_concerne
     if not entity_id and water_point_id:
         # ID present mais invalide/introuvable (ex. faute de frappe) : on garde trace
         # de la valeur d'origine dans Details plutot que de la perdre. Si le champ est
@@ -584,17 +587,19 @@ def parse_signal_code_date(code):
 # ---------------------------------------------------------------------------
 
 class Anomaly:
-    def __init__(self, dimension, subdimension, response_code, water_point_id, description, details=""):
+    def __init__(self, dimension, subdimension, response_code, water_point_id, description,
+                 details="", champ_concerne=""):
         self.dimension = dimension
         self.subdimension = subdimension
         self.response_code = response_code
         self.water_point_id = water_point_id
         self.description = description
         self.details = details
+        self.champ_concerne = champ_concerne
 
     def as_row(self):
         return [self.dimension, self.subdimension, self.response_code, self.water_point_id,
-                self.description, self.details]
+                self.description, self.champ_concerne, self.details]
 
 
 # ---------------------------------------------------------------------------
@@ -673,7 +678,7 @@ def check_validite(appel_rows):
             anomalies.append(Anomaly(
                 "Validité", "Format signal code", rc, wp,
                 "Signal reference ne respecte pas le format attendu",
-                f"Valeur : '{signal_ref}'",
+                champ_concerne=signal_ref,
             ))
         if wp and not wp.strip().isdigit():
             anomalies.append(Anomaly(
@@ -704,7 +709,7 @@ def check_unicite(appel_rows):
                 "Unicité", "Doublon signal code",
                 r.get("Response Code", ""), r.get("Water Point ID > Unique ID", ""),
                 "Signal reference dupliqué",
-                signal_ref,
+                champ_concerne=signal_ref,
             ))
         elif status == "Rejected" and "doublon" in rejection.lower():
             # Uniquement si toujours au statut Rejected : si la réponse est devenue Final,
@@ -713,7 +718,8 @@ def check_unicite(appel_rows):
                 "Unicité", "Doublon signal code",
                 r.get("Response Code", ""), r.get("Water Point ID > Unique ID", ""),
                 "Rejet mWater pour doublon de signal code",
-                signal_ref if signal_ref else "Signal reference vide",
+                details="" if signal_ref else "Signal reference vide",
+                champ_concerne=signal_ref,
             ))
     return anomalies
 
@@ -756,7 +762,8 @@ def check_coherence(appel_rows, maintenance_rows, reparation_rows):
             anomalies.append(Anomaly(
                 "Cohérence", "Préfixe déploiement", rc, wp,
                 "Préfixe du signal code différent du déploiement déclaré",
-                f"Signal reference : {signal_ref} / Deployment : {deployment}",
+                f"Deployment déclaré : {deployment}",
+                champ_concerne=signal_ref,
             ))
 
         # 2. Présence dans le bon formulaire selon l'état de la pompe
@@ -771,7 +778,8 @@ def check_coherence(appel_rows, maintenance_rows, reparation_rows):
             anomalies.append(Anomaly(
                 "Cohérence", "Présence dans le bon formulaire", rc, wp,
                 "Pompe 'Partiellement' fonctionnelle mais signal code absent du formulaire Maintenance préventive",
-                f"Signal reference : {signal_ref} — {localisation}",
+                localisation,
+                champ_concerne=signal_ref,
             ))
         elif pump_state == "No" and not found_in_reparation:
             if found_in_maintenance:
@@ -781,7 +789,8 @@ def check_coherence(appel_rows, maintenance_rows, reparation_rows):
             anomalies.append(Anomaly(
                 "Cohérence", "Présence dans le bon formulaire", rc, wp,
                 "Pompe 'Non' fonctionnelle mais signal code absent du formulaire Réparation après panne",
-                f"Signal reference : {signal_ref} — {localisation}",
+                localisation,
+                champ_concerne=signal_ref,
             ))
 
         # 3. Date du signal code <= date de l'activité (Completion date of the work)
@@ -796,8 +805,9 @@ def check_coherence(appel_rows, maintenance_rows, reparation_rows):
                 anomalies.append(Anomaly(
                     "Cohérence", "Date signal code vs activité", rc, wp,
                     "Date du signal code postérieure à la date de l'activité",
-                    f"Signal code : {signal_ref} (date : {code_date}) / "
-                    f"Completion date of the work : {completion.date()}",
+                    f"Date du signal code : {code_date} / "
+                    f"Date de complétion de l'activité : {completion.date()}",
+                    champ_concerne=signal_ref,
                 ))
     return anomalies
 
@@ -895,6 +905,68 @@ def find_child_item_id(token, drive_id, folder_item_id, file_name):
     return None
 
 
+# ---------------------------------------------------------------------------
+# Migration retroactive : extraction de "Champ concerne" depuis l'ancien format
+# de Details (avant l'ajout de cette colonne, le 04/09/2026). Idempotent : ne
+# touche pas une ligne deja migree (Champ concerne deja rempli) ni une ligne
+# dont Details ne correspond a aucun ancien format connu.
+# ---------------------------------------------------------------------------
+
+_MIGRATION_FORMAT_SIGNAL_CODE_RE = re.compile(r"^Valeur : '(.*)'$")
+_MIGRATION_PREFIXE_DEPLOIEMENT_RE = re.compile(r"^Signal reference : (.+) / Deployment : (.+)$")
+_MIGRATION_PRESENCE_FORMULAIRE_RE = re.compile(r"^Signal reference : (\S+)(?: — (.*))?$")
+_MIGRATION_DATE_SIGNAL_RE = re.compile(
+    r"^Signal code : (.+?) \(date : (.+?)\) / Completion date of the work : (.+)$"
+)
+
+
+def migrer_ligne_champ_concerne(row):
+    """Retro-extrait "Champ concerne" depuis l'ancien texte de Details, pour les lignes
+    du log SharePoint creees avant l'ajout de cette colonne (voir README, section
+    Cohérence). Ne modifie rien si la ligne est deja au nouveau format."""
+    if (row.get("Champ concerné") or "").strip():
+        return row  # deja migree
+
+    sous_dim = row.get("Sous-dimension", "")
+    details = row.get("Détails") or ""
+    if not details:
+        return row
+
+    if sous_dim == "Format signal code":
+        m = _MIGRATION_FORMAT_SIGNAL_CODE_RE.match(details)
+        if m:
+            row["Champ concerné"] = m.group(1)
+            row["Détails"] = ""
+
+    elif sous_dim == "Doublon signal code":
+        if details != "Signal reference vide":
+            row["Champ concerné"] = details
+            row["Détails"] = ""
+
+    elif sous_dim == "Préfixe déploiement":
+        m = _MIGRATION_PREFIXE_DEPLOIEMENT_RE.match(details)
+        if m:
+            row["Champ concerné"] = m.group(1)
+            row["Détails"] = f"Deployment déclaré : {m.group(2)}"
+
+    elif sous_dim == "Présence dans le bon formulaire":
+        m = _MIGRATION_PRESENCE_FORMULAIRE_RE.match(details)
+        if m:
+            row["Champ concerné"] = m.group(1)
+            row["Détails"] = m.group(2) or ""
+
+    elif sous_dim == "Date signal code vs activité":
+        m = _MIGRATION_DATE_SIGNAL_RE.match(details)
+        if m:
+            row["Champ concerné"] = m.group(1)
+            row["Détails"] = (
+                f"Date du signal code : {m.group(2)} / "
+                f"Date de complétion de l'activité : {m.group(3)}"
+            )
+
+    return row
+
+
 def download_existing_log(token, drive_id, folder_item_id, file_name):
     """Télécharge le log existant sur SharePoint. Retourne [] si le fichier n'existe pas encore
     (première exécution)."""
@@ -917,7 +989,7 @@ def download_existing_log(token, drive_id, folder_item_id, file_name):
     for values in ws.iter_rows(min_row=2, values_only=True):
         row = dict(zip(headers, values))
         if row.get("Dimension"):  # ignore lignes vides éventuelles
-            rows.append(row)
+            rows.append(migrer_ligne_champ_concerne(row))
     return rows
 
 
@@ -990,6 +1062,7 @@ def merge_with_log(current_anomalies, existing_rows, today_str, submitted_on_loo
             "Response Code": a.response_code,
             "Water Point ID": a.water_point_id,
             "Description": a.description,
+            "Champ concerné": a.champ_concerne,
             "Détails": a.details,
             "Signal code": code,
             "Maintenance préventive": "Oui" if code and code in maint_idx else "Non",
