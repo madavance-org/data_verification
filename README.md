@@ -10,7 +10,7 @@ Le script `verify_maintenance_preventive.py` :
 4. Réenregistre ce même fichier (nom fixe, pas de date dans le nom) sur SharePoint via Microsoft Graph.
 5. Envoie un email de confirmation avec le décompte d'anomalies ouvertes par dimension, plus le nombre de nouvelles et de résolues.
 
-Exécution automatique hebdomadaire via GitHub Actions (lundi 06:30 UTC), ou manuelle via `workflow_dispatch`. Ne modifie jamais les données mWater — uniquement de la détection/reporting. La correction reste une étape manuelle séparée.
+Exécution automatique quotidienne via GitHub Actions (06:30 UTC), ou manuelle via `workflow_dispatch`. En plus du rapport Excel/SharePoint (source de référence), chaque anomalie est aussi insérée en parallèle dans un formulaire mWater dédié (voir "Insertion parallèle dans mWater" plus bas). La correction reste une étape manuelle séparée.
 
 ### Le fichier de log (`data_verification_call_log.xlsx`)
 
@@ -23,6 +23,30 @@ Contrairement à un rapport horodaté recréé à chaque exécution, c'est **le 
 Colonnes : `Dimension`, `Sous-dimension`, `Response Code`, `Water Point ID`, `Description`, `Détails`, `Statut`, `Première détection`, `Dernière détection`, `Date de résolution`. L'onglet "Résumé" ne compte que les anomalies actuellement ouvertes (Nouveau + Toujours ouvert), pas les résolues.
 
 Si le fichier n'existe pas encore sur SharePoint (première exécution), le script part d'un log vide et toutes les anomalies détectées sont marquées "Nouveau".
+
+### Insertion parallèle dans mWater
+
+En plus du log Excel/SharePoint (qui reste la source de référence), chaque anomalie
+fusionnée est aussi poussée dans un formulaire mWater dédié — `1febfeabe8054be6979350b81d1652fe`
+("MadAvance || Vérification de données || Formulaire || Actif"), créé le 02/09/2026,
+pensé pour alimenter un futur Dashboard mWater. Insertion non bloquante : si elle échoue,
+le reste du script (Excel, email) continue normalement.
+
+Mécanisme (upsert, comme pour forms/datagrids/consoles — mWater ne supporte ni PUT ni PATCH) :
+un POST systématique sur `/v3/responses`, avec un `_id` stable (dérivé de la clé
+Response Code + Water Point ID) pour mettre à jour une ligne existante, ou un `_id`
+généré (uuid4) pour en créer une nouvelle.
+
+Champs obligatoires découverts en testant en direct le 02/09/2026 (sinon `403 Permission
+denied to insert`, même avec un compte admin) :
+- `user` : identifiant de l'unique énumérateur autorisé sur le déploiement du formulaire
+  (pas l'identité du compte de service qui authentifie la requête).
+- `deployment` : identifiant du déploiement du formulaire.
+- `status: "final"`, `approvals: []`, `startedOn`/`submittedOn` (horodatage de l'insertion).
+- Le champ Site attend `{"code": "<code du point d'eau>"}`, pas l'UUID de l'entité.
+
+Les lignes sans Water Point ID valide sont soumises quand même (pas ignorées) ; sans
+Water Point ID, la correspondance pour l'upsert se fait sur Response Code seul.
 
 ## Secrets GitHub Actions requis (Settings > Secrets and variables > Actions)
 
