@@ -89,6 +89,7 @@ Q_DIMENSION = "40e7a60a2c6b41589313e72f816cdcb5"
 Q_SOUS_DIMENSION = "1ba451d29b91404f8c9d16a3e8d08cd4"
 Q_RESPONSE_CODE = "cd92c27826674193ac4b35bf5198a167"
 Q_DESCRIPTION = "f9adfa4bb56c4e16afc4fd1628839512"
+Q_CHAMP_CONCERNE = "1c562ea5696e4a88a0ddd1d5cd06aa5f"
 Q_DETAILS = "01e0435d0c3543939c573e9292423eaf"
 Q_STATUT = "de575ee83a0141119161cc0c96b496f2"
 Q_PREMIERE_DETECTION = "5c20dbea032a4cfebcc1d4b7db62f455"
@@ -203,9 +204,6 @@ def build_mwater_log_response(row, client_id):
     if is_valid_water_point_id(water_point_id):
         entity_id = find_water_point_entity_id(water_point_id, client_id)
     details = row.get("Détails", "")
-    champ_concerne = row.get("Champ concerné", "")
-    if champ_concerne:
-        details = f"{champ_concerne} — {details}" if details else champ_concerne
     if not entity_id and water_point_id:
         # ID present mais invalide/introuvable (ex. faute de frappe) : on garde trace
         # de la valeur d'origine dans Details plutot que de la perdre. Si le champ est
@@ -232,6 +230,8 @@ def build_mwater_log_response(row, client_id):
         data[Q_DIMENSION] = {"value": row["Dimension"]}
     if row.get("Description"):
         data[Q_DESCRIPTION] = {"value": row["Description"]}
+    if row.get("Champ concerné"):
+        data[Q_CHAMP_CONCERNE] = {"value": row["Champ concerné"]}
     date_resolution = parse_log_date(row.get("Date de résolution"))
     if date_resolution:
         data[Q_DATE_RESOLUTION] = {"value": date_resolution}
