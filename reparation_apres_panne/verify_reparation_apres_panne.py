@@ -45,6 +45,7 @@ from common.mwater_client import (
     download_datagrid,
     extract_water_point_code,
     fetch_raw_responses_by_code,
+    find_water_point_entity_id,
     mwater_login,
 )
 from common.sharepoint import download_existing_log, graph_token, resolve_share_link, send_html_email, upload_to_sharepoint
@@ -130,12 +131,18 @@ def parse_log_date(value):
         return None
 
 
-def build_mwater_log_response(row):
-    """Construit le payload de réponse mWater pour une ligne du log (voir
-    verify_maintenance_preventive.py pour le détail des champs obligatoires). Pas de
-    résolution d'entité Site ici : ce script n'a pas encore été testé en écriture mWater,
-    on ne réintroduit pas cette complexité tant que DEPLOYMENT_LOG_VERIFICATION est
-    inconnu."""
+def is_valid_water_point_id(water_point_id):
+    """Même règle que la dimension Validité : un Water Point ID exploitable comme
+    référence Site doit être numérique."""
+    return str(water_point_id or "").strip().isdigit()
+
+
+def build_mwater_log_response(row, client_id):
+    """Construit le payload de réponse mWater pour une ligne du log (même logique que
+    verify_maintenance_preventive.py, voir sa docstring pour le détail des champs
+    obligatoires). `find_water_point_entity_id` sert uniquement à vérifier que le point
+    d'eau existe encore dans mWater avant de renseigner le champ Site — la valeur
+    envoyée est le code du point d'eau, pas l'UUID de l'entité."""
     statut = row.get("Statut")
     choice_id = STATUT_CHOICE_IDS.get(statut)
     if not choice_id:
@@ -143,16 +150,26 @@ def build_mwater_log_response(row):
               f"formulaire) : {row.get('Response Code')}", file=sys.stderr)
         return None
 
+    water_point_id = str(row.get("Water Point ID") or "").strip()
+    entity_id = None
+    if is_valid_water_point_id(water_point_id):
+        entity_id = find_water_point_entity_id(water_point_id, client_id)
+    details = row.get("Détails", "")
+    if not entity_id and water_point_id:
+        # ID présent mais invalide/introuvable : on garde trace de la valeur d'origine
+        # dans Détails plutôt que de la perdre. Champ vide -> rien à ajouter.
+        note = "[Water Point ID saisi (invalide) : " + water_point_id + "]"
+        details = (details + "\n" + note) if details else note
+
     data = {
         Q_SOUS_DIMENSION: {"value": row.get("Sous-dimension", "")},
         Q_RESPONSE_CODE: {"value": row.get("Response Code", "")},
-        Q_DETAILS: {"value": row.get("Détails", "")},
+        Q_DETAILS: {"value": details},
         Q_STATUT: {"value": choice_id},
         Q_PREMIERE_DETECTION: {"value": parse_log_date(row.get("Première détection"))},
         Q_DERNIERE_DETECTION: {"value": parse_log_date(row.get("Dernière détection"))},
     }
-    water_point_id = str(row.get("Water Point ID") or "").strip()
-    if water_point_id.isdigit():
+    if entity_id:
         data[Q_POINT_EAU] = {"value": {"code": water_point_id}}
     if row.get("Dimension"):
         data[Q_DIMENSION] = {"value": row["Dimension"]}
@@ -223,7 +240,7 @@ def inserer_log_dans_mwater(merged_rows, client_id):
 
     created, updated, ignored = 0, 0, 0
     for row in merged_rows:
-        payload = build_mwater_log_response(row)
+        payload = build_mwater_log_response(row, client_id)
         if payload is None:
             ignored += 1
             continue
