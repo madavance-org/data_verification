@@ -26,9 +26,6 @@ Inspiré du repo `ITManagerMadAvance/mWater_backup` pour les mécanismes
 d'authentification mWater et Microsoft Graph.
 """
 
-import base64
-import csv
-import io
 import json
 import os
 import re
@@ -39,11 +36,20 @@ from datetime import datetime
 
 import requests
 
+from common.dates import parse_dt
+from common.http_utils import raise_for_status_verbose
+from common.mwater_client import (
+    MWATER_API_BASE,
+    download_datagrid,
+    extract_water_point_code,
+    fetch_raw_responses_by_code,
+    mwater_login,
+)
+from common.sharepoint import download_existing_log, graph_token, resolve_share_link, send_html_email, upload_to_sharepoint
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-
-MWATER_API_BASE = "https://api.mwater.co/v3"
 
 # IDs des datagrids mWater (préconfigurés dans le portail, pas des secrets)
 DATAGRID_APPEL = "5f443b8a8c144502a304c8c5c24d4f82"
@@ -383,14 +389,6 @@ def inserer_log_dans_mwater(merged_rows, client_id):
 
 
 
-def raise_for_status_verbose(response):
-    """Comme dans backup_mwater.py : loggue le corps complet en cas d'erreur HTTP."""
-    if not response.ok:
-        print(f"HTTP {response.status_code} sur {response.url}", file=sys.stderr)
-        print(response.text[:2000], file=sys.stderr)
-        response.raise_for_status()
-
-
 # ---------------------------------------------------------------------------
 # mWater : authentification et téléchargement des datagrids
 # ---------------------------------------------------------------------------
@@ -418,74 +416,6 @@ def identifier_compte_mwater(client_id):
         print(f"  lecture design formulaire (GET /forms/<id>) : HTTP {resp.status_code}")
     except Exception as exc:
         print(f"  lecture design formulaire : echec ({exc})")
-
-
-def mwater_login(username, password):
-    resp = requests.post(
-        f"{MWATER_API_BASE}/clients",
-        json={"username": username, "password": password},
-        timeout=30,
-    )
-    raise_for_status_verbose(resp)
-    client_id = resp.json().get("client")
-    if not client_id:
-        raise RuntimeError("Authentification mWater : champ 'client' absent de la réponse")
-    return client_id
-
-
-def download_datagrid(datagrid_id, client_id):
-    """Télécharge un datagrid mWater et le retourne comme liste de dict (une par ligne)."""
-    resp = requests.get(
-        f"{MWATER_API_BASE}/datagrids/{datagrid_id}/download",
-        params={"client": client_id, "share": "", "extraFilters": "[]", "format": "csv"},
-        timeout=120,
-    )
-    raise_for_status_verbose(resp)
-    # utf-8-sig pour gérer le BOM renvoyé par mWater
-    text = resp.content.decode("utf-8-sig")
-    reader = csv.DictReader(io.StringIO(text))
-    return list(reader)
-
-
-def fetch_raw_responses_by_code(client_id, form_id, codes, chunk_size=200):
-    """Récupère les réponses brutes mWater (endpoint /responses, avant jointure du datagrid)
-    pour une liste de 'Response Code'. Sert à distinguer un champ jamais répondu d'un champ
-    répondu dont l'entité liée (ex. Water Point) a été supprimée : dans ce cas, le datagrid
-    exporte le champ vide alors que la réponse contient bien une référence à une entité,
-    visible dans le tableau `entities` de la réponse brute.
-
-    Renvoie {code: [réponses brutes]} — en liste, car un même Response Code peut correspondre à
-    plusieurs réponses distinctes (voir Rindra_Madavance-DV7526, où 29 réponses partagent le
-    même code) ; un dict à valeur unique perdrait silencieusement toutes les réponses sauf la
-    dernière traitée.
-    """
-    results = {}
-    codes = [c for c in codes if c]
-    for i in range(0, len(codes), chunk_size):
-        chunk = codes[i:i + chunk_size]
-        resp = requests.get(
-            f"{MWATER_API_BASE}/responses",
-            params={
-                "client": client_id,
-                "filter": json.dumps({"form": form_id, "code": {"$in": chunk}}),
-            },
-            timeout=60,
-        )
-        raise_for_status_verbose(resp)
-        for item in resp.json():
-            results.setdefault(item.get("code"), []).append(item)
-    return results
-
-
-def extract_water_point_code(raw_response, entity_type="water_point"):
-    """Extrait le code de l'entité water_point référencée dans une réponse brute (tableau
-    `entities`), indépendamment de l'ID de question. None si aucune référence de ce type."""
-    if not raw_response:
-        return None
-    for entity in raw_response.get("entities", []):
-        if entity.get("entityType") == entity_type:
-            return entity.get("value")
-    return None
 
 
 def enrich_missing_water_point_ids(appel_rows, client_id):
@@ -556,19 +486,6 @@ def enrich_missing_water_point_ids(appel_rows, client_id):
 # ---------------------------------------------------------------------------
 # Utilitaires de parsing
 # ---------------------------------------------------------------------------
-
-def parse_dt(value):
-    """Parse un horodatage mWater 'AAAA-MM-JJ HH:MM:SS'. Retourne None si vide/invalide."""
-    value = (value or "").strip()
-    if not value:
-        return None
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
-        try:
-            return datetime.strptime(value, fmt)
-        except ValueError:
-            continue
-    return None
-
 
 def parse_signal_code_date(code):
     """Extrait la date embarquée (JJMMAAAA) d'un signal code/reference. Retourne un datetime.date ou None."""
@@ -887,24 +804,6 @@ def anomaly_key(a):
     return (a.dimension, a.subdimension, a.response_code, a.description, a.water_point_id)
 
 
-def find_child_item_id(token, drive_id, folder_item_id, file_name):
-    """Cherche un fichier par nom parmi les enfants d'un dossier, en adressage 100% par ID
-    (pas de syntaxe 'items/{id}:/{path}:' — celle-ci renvoie un 400 'Invalid request' pour ce
-    dossier précis en authentification applicative, alors qu'elle fonctionne en délégué ;
-    cause probable : résolution par chemin qui échoue côté Graph pour cet item, indépendamment
-    des permissions elles-mêmes). Retourne l'ID de l'item trouvé, ou None."""
-    resp = requests.get(
-        f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{folder_item_id}/children",
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=60,
-    )
-    raise_for_status_verbose(resp)
-    for item in resp.json().get("value", []):
-        if item.get("name") == file_name:
-            return item.get("id")
-    return None
-
-
 # ---------------------------------------------------------------------------
 # Migration retroactive : extraction de "Champ concerne" depuis l'ancien format
 # de Details (avant l'ajout de cette colonne, le 04/09/2026). Idempotent : ne
@@ -965,32 +864,6 @@ def migrer_ligne_champ_concerne(row):
             )
 
     return row
-
-
-def download_existing_log(token, drive_id, folder_item_id, file_name):
-    """Télécharge le log existant sur SharePoint. Retourne [] si le fichier n'existe pas encore
-    (première exécution)."""
-    item_id = find_child_item_id(token, drive_id, folder_item_id, file_name)
-    if not item_id:
-        return []
-
-    resp = requests.get(
-        f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{item_id}/content",
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=60,
-    )
-    raise_for_status_verbose(resp)
-
-    from openpyxl import load_workbook
-    wb = load_workbook(io.BytesIO(resp.content))
-    ws = wb["Anomalies"]
-    headers = [c.value for c in ws[1]]
-    rows = []
-    for values in ws.iter_rows(min_row=2, values_only=True):
-        row = dict(zip(headers, values))
-        if row.get("Dimension"):  # ignore lignes vides éventuelles
-            rows.append(migrer_ligne_champ_concerne(row))
-    return rows
 
 
 def build_submitted_on_lookup(appel_rows):
@@ -1124,74 +997,6 @@ def build_log_report(merged_rows, output_path):
 # Microsoft Graph : upload SharePoint + email
 # ---------------------------------------------------------------------------
 
-def graph_token(tenant_id, client_id, client_secret):
-    resp = requests.post(
-        f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "scope": "https://graph.microsoft.com/.default",
-        },
-        timeout=30,
-    )
-    raise_for_status_verbose(resp)
-    return resp.json()["access_token"]
-
-
-def resolve_share_link(token, share_url):
-    """Résout un lien de partage SharePoint (ex. https://.../:f:/s/...) en (drive_id, item_id)
-    via l'API Graph /shares/{shareId}/driveItem. Évite d'avoir à extraire les IDs à la main :
-    il suffit de coller le lien de partage tel quel dans le secret SHAREPOINT_FOLDER_LINK."""
-    b64 = base64.b64encode(share_url.encode("utf-8")).decode("utf-8")
-    encoded = "u!" + b64.replace("+", "-").replace("/", "_").rstrip("=")
-    resp = requests.get(
-        f"https://graph.microsoft.com/v1.0/shares/{encoded}/driveItem",
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=30,
-    )
-    raise_for_status_verbose(resp)
-    data = resp.json()
-    drive_id = data["parentReference"]["driveId"]
-    item_id = data["id"]
-    return drive_id, item_id
-
-
-def upload_to_sharepoint(token, drive_id, folder_item_id, file_path, file_name):
-    """Dépose/écrase le fichier, en adressage 100% par ID (voir note dans
-    find_child_item_id). S'il n'existe pas encore, on crée d'abord un fichier vide dans le
-    dossier (POST .../children), puis on écrit son contenu par ID."""
-    with open(file_path, "rb") as f:
-        content = f.read()
-
-    item_id = find_child_item_id(token, drive_id, folder_item_id, file_name)
-    if not item_id:
-        resp = requests.post(
-            f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{folder_item_id}/children",
-            headers={"Authorization": f"Bearer {token}"},
-            json={
-                "name": file_name,
-                "file": {},
-                "@microsoft.graph.conflictBehavior": "replace",
-            },
-            timeout=60,
-        )
-        raise_for_status_verbose(resp)
-        item_id = resp.json()["id"]
-
-    resp = requests.put(
-        f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{item_id}/content",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/octet-stream",
-        },
-        data=content,
-        timeout=120,
-    )
-    raise_for_status_verbose(resp)
-    return resp.json()
-
-
 def send_confirmation_email(token, sender, recipients, file_name, open_count, new_count,
                              resolved_count, deleted_count, counts_by_dimension):
     lines = "".join(f"<li>{dim} : {n}</li>" for dim, n in counts_by_dimension.items())
@@ -1203,19 +1008,7 @@ def send_confirmation_email(token, sender, recipients, file_name, open_count, ne
         f"<ul>{lines}</ul>"
         f"<p>Log mis à jour sur SharePoint : <b>{file_name}</b></p>"
     )
-    resp = requests.post(
-        f"https://graph.microsoft.com/v1.0/users/{sender}/sendMail",
-        headers={"Authorization": f"Bearer {token}"},
-        json={
-            "message": {
-                "subject": f"Vérification de données — {file_name}",
-                "body": {"contentType": "HTML", "content": body_html},
-                "toRecipients": [{"emailAddress": {"address": addr.strip()}} for addr in recipients.split(",")],
-            }
-        },
-        timeout=30,
-    )
-    raise_for_status_verbose(resp)
+    send_html_email(token, sender, recipients, f"Vérification de données — {file_name}", body_html)
 
 
 # ---------------------------------------------------------------------------
@@ -1272,7 +1065,8 @@ def main():
     sharepoint_drive_id, sharepoint_folder_item_id = resolve_share_link(token, sharepoint_folder_link)
 
     print("Téléchargement du log existant sur SharePoint...")
-    existing_rows = download_existing_log(token, sharepoint_drive_id, sharepoint_folder_item_id, LOG_FILE_NAME)
+    existing_rows = download_existing_log(token, sharepoint_drive_id, sharepoint_folder_item_id, LOG_FILE_NAME,
+                                           row_hook=migrer_ligne_champ_concerne)
     print(f"  {len(existing_rows)} lignes déjà présentes dans le log")
 
     today_str = datetime.now().strftime("%d/%m/%Y")

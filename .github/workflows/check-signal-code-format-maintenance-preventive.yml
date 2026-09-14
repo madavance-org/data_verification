@@ -24,4 +24,4 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           SHAREPOINT_FOLDER_LINK: ${{ secrets.SHAREPOINT_FOLDER_LINK }}
-        run: python maintenance_preventive/check_signal_code_format.py
+        run: python -m maintenance_preventive.check_signal_code_format

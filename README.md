@@ -9,6 +9,20 @@ Vérification automatisée des données mWater, sur la base des six dimensions d
 - `premiere_rehabilitation/` — Première réhabilitation (registre des points d'eau : créations, fusions/déduplication)
 - `utils/` — scripts transverses non liés à une seule activité
 
+## Module partagé `common/`
+
+Regroupe le code d'infrastructure identique (ou presque) d'un script à l'autre : authentification et lecture mWater (`common/mwater_client.py`), résolution des fusions de points d'eau (`common/water_point_merges.py`), SharePoint/email via Microsoft Graph (`common/sharepoint.py`), aide HTTP (`common/http_utils.py`), parsing de dates (`common/dates.py`). Chaque script d'activité l'importe (`from common.mwater_client import ...`) plutôt que de dupliquer ces fonctions — un correctif dans `common/` profite immédiatement à tous les scripts qui l'utilisent, au lieu d'avoir à le répercuter dans chaque copie séparément.
+
+Ce que `common/` ne contient PAS : les six dimensions de vérification (règles métier propres à chaque activité), la logique de log Nouveau/Toujours ouvert/Résolu (les schémas de log diffèrent trop d'un script à l'autre pour être unifiés sans perdre en lisibilité — ex. gestion du statut "Supprimé" côté Appel, absente ailleurs), et tout ce qui n'est utilisé que par un seul script (ex. l'insertion du log dans un formulaire mWater dédié, spécifique à `verify_maintenance_preventive.py`).
+
+Pour que les imports `common.*` fonctionnent, chaque script se lance comme un **module**, depuis la racine du repo — jamais par chemin de fichier direct :
+
+```bash
+python -m appel_maintenance_preventive.verify_maintenance_preventive   # et pas python appel_maintenance_preventive/verify_maintenance_preventive.py
+```
+
+Les workflows GitHub Actions (`.github/workflows/*.yml`) utilisent déjà cette syntaxe.
+
 ## `appel_maintenance_preventive/`
 
 ### `verify_maintenance_preventive.py`
@@ -105,7 +119,7 @@ export MWATER_USERNAME=... MWATER_PASSWORD=...
 export AZURE_TENANT_ID=... AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=...
 export SHAREPOINT_DRIVE_ID=... SHAREPOINT_FOLDER_ITEM_ID=...
 export EMAIL_SENDER=... EMAIL_RECIPIENTS=...
-python appel_maintenance_preventive/verify_maintenance_preventive.py
+python -m appel_maintenance_preventive.verify_maintenance_preventive
 ```
 
 ## Test de validation (logique seule, sans upload)
@@ -125,7 +139,7 @@ pip install -r requirements.txt
 export MWATER_USERNAME=... MWATER_PASSWORD=...
 export AZURE_TENANT_ID=... AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=...
 export SHAREPOINT_FOLDER_LINK=...
-python maintenance_preventive/check_signal_code_format.py
+python -m maintenance_preventive.check_signal_code_format
 ```
 
 > Historique : ce script et le contrôle Réparation après panne provenaient d'un unique `check_signal_code_format.py` couvrant les deux formulaires avec un log combiné (`data_verification_signal_code_log.xlsx`, plus mis à jour). Contrairement à Maintenance préventive, la partie Réparation après panne n'est **pas** conservée comme script séparé : sa logique (regex de format, correction automatique) sera reprise directement dans `reparation_apres_panne/verify_reparation_apres_panne.py` (à écrire) comme dimension Validité, au même titre que les 5 autres dimensions et dans le même log — pas de log séparé pour ce seul contrôle.
@@ -164,7 +178,7 @@ export MWATER_USERNAME=... MWATER_PASSWORD=...
 export AZURE_TENANT_ID=... AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=...
 export SHAREPOINT_FOLDER_LINK=...
 export EMAIL_SENDER=... EMAIL_RECIPIENTS=...
-python carnet_de_bord/verify_carnet_de_bord.py
+python -m carnet_de_bord.verify_carnet_de_bord
 ```
 
 ---
@@ -175,7 +189,7 @@ Diagnostic ponctuel (pas de workflow dédié, exécution manuelle en local), rat
 
 ```bash
 export MWATER_USERNAME=... MWATER_PASSWORD=...
-python premiere_rehabilitation/find_merged_water_points.py --csv sortie.csv
+python -m premiere_rehabilitation.find_merged_water_points --csv sortie.csv
 ```
 
 ---
@@ -186,7 +200,7 @@ Télécharge tel quel le datagrid mWater "Clean Water || Water Point" (colonnes 
 
 ```bash
 export MWATER_USERNAME=... MWATER_PASSWORD=...
-python utils/list_merged_water_points.py --csv sortie.csv [--upload]
+python -m utils.list_merged_water_points --csv sortie.csv [--upload]
 ```
 
 Plusieurs constantes restent provisoires, à affiner avec Lanja au fil de l'usage réel du script (voir commentaires dans le code) : `COMPTEUR_TRAJET_MAX_KM`, `GPS_ACCURACY_DEFAUT_M`, `GPS_TOLERANCE_MARGE`, `GPS_TOLERANCE_PLANCHER_KM`, `SIMILARITE_NOM_SEUIL`.
