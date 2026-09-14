@@ -136,23 +136,13 @@ export SHAREPOINT_FOLDER_LINK=...
 python maintenance_preventive/check_signal_code_format.py
 ```
 
+> Historique : ce script et le contrôle Réparation après panne provenaient d'un unique `check_signal_code_format.py` couvrant les deux formulaires avec un log combiné (`data_verification_signal_code_log.xlsx`, plus mis à jour). Contrairement à Maintenance préventive, la partie Réparation après panne n'est **pas** conservée comme script séparé : sa logique (regex de format, correction automatique) sera reprise directement dans `reparation_apres_panne/verify_reparation_apres_panne.py` (à écrire) comme dimension Validité, au même titre que les 5 autres dimensions et dans le même log — pas de log séparé pour ce seul contrôle.
+
 ---
 
 ## `reparation_apres_panne/`
 
-### `check_signal_code_format.py`
-
-Même contrôle que `maintenance_preventive/check_signal_code_format.py`, mais sur le formulaire **Réparation après panne**. Log dédié `data_verification_signal_code_reparation_log.xlsx`.
-
-```bash
-pip install -r requirements.txt
-export MWATER_USERNAME=... MWATER_PASSWORD=...
-export AZURE_TENANT_ID=... AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=...
-export SHAREPOINT_FOLDER_LINK=...
-python reparation_apres_panne/check_signal_code_format.py
-```
-
-> Historique : ces deux scripts proviennent d'un unique `check_signal_code_format.py` couvrant les deux formulaires, avec un seul log combiné (`data_verification_signal_code_log.xlsx`). Ce fichier combiné reste sur SharePoint mais n'est plus mis à jour par aucun des deux scripts — son historique n'a pas été automatiquement réparti dans les deux nouveaux logs.
+Dossier en préparation : `verify_reparation_apres_panne.py` (à écrire) couvrira les 6 dimensions pour cette activité, dont la Validité du format Signal code en reprenant la logique de `maintenance_preventive/check_signal_code_format.py` (voir note ci-dessus).
 
 ---
 
