@@ -3,11 +3,14 @@
 Vérification automatisée des données mWater, sur la base des six dimensions du Manuel de vérification de données MadAvance (Complétude, Promptitude, Validité, Unicité, Cohérence, Fiabilité). Un dossier par activité :
 
 - `appel_maintenance_preventive/` — Appel maintenance préventive
+- `maintenance_preventive/` — Maintenance préventive (activité distincte de l'Appel : le formulaire rempli lors de l'intervention elle-même)
 - `carnet_de_bord/` — Carnet de bord (suivi véhicules)
 - `reparation_apres_panne/` — Réparation après panne
-- `utils/` — scripts transverses non liés à une seule activité (contrôle ponctuel du format Signal code, diagnostics points d'eau fusionnés)
+- `utils/` — scripts transverses non liés à une seule activité (actuellement : diagnostics sur l'ensemble des points d'eau, indépendamment de toute activité)
 
-## `appel_maintenance_preventive/verify_maintenance_preventive.py`
+## `appel_maintenance_preventive/`
+
+### `verify_maintenance_preventive.py`
 
 Vérification automatisée des données mWater pour l'activité **Appel maintenance préventive**.
 
@@ -110,9 +113,50 @@ Testé le 21/07/2026 sur un export réel des 4 datagrids (3073 réponses Appel, 
 
 La logique de log (Nouveau / Toujours ouvert / Résolu) a été testée par simulation de deux exécutions successives : les statuts et dates de première/dernière détection et de résolution se comportent comme attendu. Pas encore testée en conditions réelles sur deux exécutions GitHub Actions successives.
 
+### `find_merged_water_points.py`
+
+Diagnostic ponctuel (pas de workflow dédié, exécution manuelle en local) : pour les réponses **Appel maintenance préventive** dont le Water Point ID est vide dans le datagrid, détermine si le point d'eau réellement saisi a depuis été fusionné (`_merged_entities`) dans une autre entité mWater plutôt que supprimé ou jamais renseigné.
+
+```bash
+export MWATER_USERNAME=... MWATER_PASSWORD=...
+python appel_maintenance_preventive/find_merged_water_points.py --csv sortie.csv
+```
+
 ---
 
-# `carnet_de_bord/verify_carnet_de_bord.py` — Carnet de bord
+## `maintenance_preventive/check_signal_code_format.py`
+
+Vérification ponctuelle (workflow_dispatch, pas de cron) du format du champ "Signal code" tel que saisi directement dans le formulaire **Maintenance préventive**, indépendamment de la Validité "Signal reference" déjà vérifiée côté Appel maintenance préventive. Format attendu : `{DEPLOYMENT}_{JJMMAAAA}_{E|S}{N}`. Log dédié `data_verification_signal_code_maintenance_log.xlsx` (même principe Nouveau / Toujours ouvert / Résolu que les autres scripts).
+
+```bash
+pip install -r requirements.txt
+export MWATER_USERNAME=... MWATER_PASSWORD=...
+export AZURE_TENANT_ID=... AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=...
+export SHAREPOINT_FOLDER_LINK=...
+python maintenance_preventive/check_signal_code_format.py
+```
+
+---
+
+## `reparation_apres_panne/`
+
+### `check_signal_code_format.py`
+
+Même contrôle que `maintenance_preventive/check_signal_code_format.py`, mais sur le formulaire **Réparation après panne**. Log dédié `data_verification_signal_code_reparation_log.xlsx`.
+
+```bash
+pip install -r requirements.txt
+export MWATER_USERNAME=... MWATER_PASSWORD=...
+export AZURE_TENANT_ID=... AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=...
+export SHAREPOINT_FOLDER_LINK=...
+python reparation_apres_panne/check_signal_code_format.py
+```
+
+> Historique : ces deux scripts proviennent d'un unique `check_signal_code_format.py` couvrant les deux formulaires, avec un seul log combiné (`data_verification_signal_code_log.xlsx`). Ce fichier combiné reste sur SharePoint mais n'est plus mis à jour par aucun des deux scripts — son historique n'a pas été automatiquement réparti dans les deux nouveaux logs.
+
+---
+
+## `carnet_de_bord/verify_carnet_de_bord.py` — Carnet de bord
 
 Vérification automatisée des données mWater pour l'activité **Carnet de bord** (suivi véhicules : trajets, carburant, lavage, entretien/maintenance, renouvellement de documents administratifs), sur cinq des six dimensions du Manuel de vérification de données MadAvance (Complétude, Promptitude, Validité, Unicité, Cohérence). La sixième, **Fiabilité**, n'est pas automatisée : elle consiste en un rapprochement documentaire (facture/fiche physique <-> saisie mWater), un contrôle manuel volontairement hors de portée du script (voir le manuel ClickUp lié).
 

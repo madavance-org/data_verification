@@ -1,4 +1,4 @@
-name: Vérification ponctuelle — Format Signal code (Maintenance/Réparation)
+name: Vérification ponctuelle — Format Signal code (Réparation après panne)
 
 on:
   workflow_dispatch: {}
@@ -24,4 +24,4 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           SHAREPOINT_FOLDER_LINK: ${{ secrets.SHAREPOINT_FOLDER_LINK }}
-        run: python utils/check_signal_code_format.py
+        run: python reparation_apres_panne/check_signal_code_format.py

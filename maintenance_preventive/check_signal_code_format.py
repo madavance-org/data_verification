@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-Vérification ponctuelle — Format des Signal code (Maintenance préventive / Réparation après panne)
-=====================================================================================================
+Vérification ponctuelle — Format des Signal code (Maintenance préventive)
+==========================================================================
 
 Contrôle indépendant de la Validité "Signal reference" déjà faite dans
-verify_maintenance_preventive.py (qui ne porte que sur Appel maintenance
-préventive) : ici, on vérifie le champ "Signal code" tel que saisi
-directement dans les formulaires Maintenance préventive et Réparation
-après panne, pour repérer les codes qui ne respectent pas le format
+appel_maintenance_preventive/verify_maintenance_preventive.py (qui ne porte
+que sur Appel maintenance préventive) : ici, on vérifie le champ "Signal
+code" tel que saisi directement dans le formulaire Maintenance préventive,
+pour repérer les codes qui ne respectent pas le format
 {DEPLOYMENT}_{JJMMAAAA}_{E|S}{N} (ex. MAR_21072026_E14).
 
 Même principe de log que verify_maintenance_preventive.py, mais dans un
-fichier séparé (data_verification_signal_code_log.xlsx) : seules les
-anomalies sont journalisées, avec un suivi Nouveau / Toujours ouvert /
+fichier séparé (data_verification_signal_code_maintenance_log.xlsx) : seules
+les anomalies sont journalisées, avec un suivi Nouveau / Toujours ouvert /
 Résolu à travers les exécutions successives (action déclenchée
 manuellement, pas de cron).
 
@@ -38,9 +38,8 @@ import requests
 MWATER_API_BASE = "https://api.mwater.co/v3"
 
 DATAGRID_MAINTENANCE = "2cfe0ba7ac264d119cfc8964b5f3cebc"
-DATAGRID_REPARATION = "d9f1c36a2d6340429658b6628fe81b88"
 
-LOG_FILE_NAME = "data_verification_signal_code_log.xlsx"
+LOG_FILE_NAME = "data_verification_signal_code_maintenance_log.xlsx"
 
 LOG_HEADERS = [
     "Formulaire", "Response Code", "Signal code", "Anomalie",
@@ -284,8 +283,7 @@ def build_log_report(merged_rows, output_path):
     for cell in summary[1]:
         cell.font = Font(bold=True)
     counts = Counter(r.get("Formulaire") for r in open_rows)
-    for label in ["Maintenance préventive", "Réparation après panne"]:
-        summary.append([label, counts.get(label, 0)])
+    summary.append(["Maintenance préventive", counts.get("Maintenance préventive", 0)])
     summary.append(["Total ouvert", len(open_rows)])
 
     wb.save(output_path)
@@ -377,16 +375,12 @@ def main():
     print("Authentification mWater...")
     client_id = mwater_login(mwater_username, mwater_password)
 
-    print("Téléchargement des datagrids...")
+    print("Téléchargement du datagrid Maintenance préventive...")
     maintenance_rows = download_datagrid(DATAGRID_MAINTENANCE, client_id)
-    reparation_rows = download_datagrid(DATAGRID_REPARATION, client_id)
     print(f"  Maintenance préventive : {len(maintenance_rows)} réponses")
-    print(f"  Réparation après panne : {len(reparation_rows)} réponses")
 
     print("Vérification du format des Signal code...")
-    anomalies = []
-    anomalies += check_format(maintenance_rows, "Maintenance préventive")
-    anomalies += check_format(reparation_rows, "Réparation après panne")
+    anomalies = check_format(maintenance_rows, "Maintenance préventive")
     print(f"  {len(anomalies)} anomalies détectées")
 
     print("Authentification Microsoft Graph...")
