@@ -1,8 +1,17 @@
 # data_verification
 
-Vérification automatisée des données mWater pour l'activité **Appel maintenance préventive**, sur la base des six dimensions du Manuel de vérification de données MadAvance (Complétude, Promptitude, Validité, Unicité, Cohérence, Fiabilité).
+Vérification automatisée des données mWater, sur la base des six dimensions du Manuel de vérification de données MadAvance (Complétude, Promptitude, Validité, Unicité, Cohérence, Fiabilité). Un dossier par activité :
 
-Le script `verify_maintenance_preventive.py` :
+- `appel_maintenance_preventive/` — Appel maintenance préventive
+- `carnet_de_bord/` — Carnet de bord (suivi véhicules)
+- `reparation_apres_panne/` — Réparation après panne
+- `utils/` — scripts transverses non liés à une seule activité (contrôle ponctuel du format Signal code, diagnostics points d'eau fusionnés)
+
+## `appel_maintenance_preventive/verify_maintenance_preventive.py`
+
+Vérification automatisée des données mWater pour l'activité **Appel maintenance préventive**.
+
+Ce script :
 
 1. S'authentifie sur l'API mWater et télécharge 4 datagrids déjà configurés dans le portail (Appel maintenance préventive, Maintenance préventive, Réparation après panne, Première réhabilitation).
 2. Applique les règles de vérification (voir le détail dans le manuel ClickUp lié).
@@ -92,7 +101,7 @@ export MWATER_USERNAME=... MWATER_PASSWORD=...
 export AZURE_TENANT_ID=... AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=...
 export SHAREPOINT_DRIVE_ID=... SHAREPOINT_FOLDER_ITEM_ID=...
 export EMAIL_SENDER=... EMAIL_RECIPIENTS=...
-python verify_maintenance_preventive.py
+python appel_maintenance_preventive/verify_maintenance_preventive.py
 ```
 
 ## Test de validation (logique seule, sans upload)
@@ -103,7 +112,7 @@ La logique de log (Nouveau / Toujours ouvert / Résolu) a été testée par simu
 
 ---
 
-# Script `verify_carnet_de_bord.py` — Carnet de bord
+# `carnet_de_bord/verify_carnet_de_bord.py` — Carnet de bord
 
 Vérification automatisée des données mWater pour l'activité **Carnet de bord** (suivi véhicules : trajets, carburant, lavage, entretien/maintenance, renouvellement de documents administratifs), sur cinq des six dimensions du Manuel de vérification de données MadAvance (Complétude, Promptitude, Validité, Unicité, Cohérence). La sixième, **Fiabilité**, n'est pas automatisée : elle consiste en un rapprochement documentaire (facture/fiche physique <-> saisie mWater), un contrôle manuel volontairement hors de portée du script (voir le manuel ClickUp lié).
 
@@ -129,7 +138,7 @@ export MWATER_USERNAME=... MWATER_PASSWORD=...
 export AZURE_TENANT_ID=... AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=...
 export SHAREPOINT_FOLDER_LINK=...
 export EMAIL_SENDER=... EMAIL_RECIPIENTS=...
-python verify_carnet_de_bord.py
+python carnet_de_bord/verify_carnet_de_bord.py
 ```
 
 Plusieurs constantes restent provisoires, à affiner avec Lanja au fil de l'usage réel du script (voir commentaires dans le code) : `COMPTEUR_TRAJET_MAX_KM`, `GPS_ACCURACY_DEFAUT_M`, `GPS_TOLERANCE_MARGE`, `GPS_TOLERANCE_PLANCHER_KM`, `SIMILARITE_NOM_SEUIL`.

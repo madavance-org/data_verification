@@ -30,4 +30,4 @@ jobs:
           SHAREPOINT_FOLDER_LINK: ${{ secrets.SHAREPOINT_FOLDER_LINK }}
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
-        run: python verify_carnet_de_bord.py
+        run: python carnet_de_bord/verify_carnet_de_bord.py
