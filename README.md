@@ -142,13 +142,35 @@ export SHAREPOINT_FOLDER_LINK=...
 python -m maintenance_preventive.check_signal_code_format
 ```
 
-> Historique : ce script et le contrôle Réparation après panne provenaient d'un unique `check_signal_code_format.py` couvrant les deux formulaires avec un log combiné (`data_verification_signal_code_log.xlsx`, plus mis à jour). Contrairement à Maintenance préventive, la partie Réparation après panne n'est **pas** conservée comme script séparé : sa logique (regex de format, correction automatique) sera reprise directement dans `reparation_apres_panne/verify_reparation_apres_panne.py` (à écrire) comme dimension Validité, au même titre que les 5 autres dimensions et dans le même log — pas de log séparé pour ce seul contrôle.
+> Historique : ce script et le contrôle Réparation après panne provenaient d'un unique `check_signal_code_format.py` couvrant les deux formulaires avec un log combiné (`data_verification_signal_code_log.xlsx`, plus mis à jour). Contrairement à Maintenance préventive, la partie Réparation après panne n'est **pas** conservée comme script séparé : sa logique (regex de format, correction automatique, désormais dans `common/signal_code.py`) est reprise dans `reparation_apres_panne/verify_reparation_apres_panne.py` comme dimension Validité, au même titre que les 5 autres dimensions et dans le même log — pas de log séparé pour ce seul contrôle.
 
 ---
 
-## `reparation_apres_panne/`
+## `reparation_apres_panne/verify_reparation_apres_panne.py`
 
-Dossier en préparation : `verify_reparation_apres_panne.py` (à écrire) couvrira les 6 dimensions pour cette activité, dont la Validité du format Signal code en reprenant la logique de `maintenance_preventive/check_signal_code_format.py` (voir note ci-dessus).
+Vérification automatisée des données mWater pour l'activité **Réparation après panne**, sur les 6 dimensions. Couvre le formulaire actif et, filtrées sur `Type de travaux`, les réponses historiques de l'ancien formulaire combiné (inactif).
+
+Différences avec `verify_maintenance_preventive.py` (Appel) :
+- Pas de sous-règle Promptitude sur le délai de réparation (pas de délai de référence défini) — seule la chronologie Drafted On/Submitted On est vérifiée.
+- La règle de Cohérence déjà couverte côté Appel (signal code présent dans Appel avec pompe "No", date embarquée ≤ date de complétion) n'est pas réimplémentée ici, pour éviter le doublon de calcul/log. Seule la cohérence interne au formulaire est vérifiée : présence/absence des champs conditionnels (`Is the repair succesfull ?`, `Completion date of the work`) selon `Is the repair possible ?`.
+- Fichier de log dédié (`data_verification_reparation_log.xlsx`), distinct de celui d'Appel — décision du 14/09/2026 de ne pas partager un seul fichier entre activités.
+- Format Signal code (dimension Validité, avec correction automatique proposée) : logique reprise de `common/signal_code.py`, la même que `maintenance_preventive/check_signal_code_format.py`.
+
+Exécution automatique hebdomadaire via GitHub Actions (lundi 07:30 UTC), ou manuelle via `workflow_dispatch`. Insertion parallèle dans le même formulaire mWater dédié qu'Appel (`1febfeabe8054be6979350b81d1652fe`), avec le déploiement propre à Réparation après panne — **pas encore renseigné** (`DEPLOYMENT_LOG_VERIFICATION` / `ENUMERATEUR_LOG_VERIFICATION` à `None` en tête de script) : l'insertion est sautée avec un avertissement tant que ces IDs n'ont pas été trouvés en testant dans le portail (voir la même découverte faite pour Appel le 02/09/2026). Le fichier Excel/SharePoint reste la source fiable dans l'intervalle.
+
+### ⚠️ À valider avant mise en production
+
+- **Champs de l'ancien formulaire combiné non confirmés.** Les valeurs `Type de travaux` filtrées (`LEGACY_TYPES_TRAVAUX_REPARATION` = "Réparation après panne" / "Entretien préventif régulier") sont une hypothèse par analogie avec "Première réhabilitation" (déjà utilisé pour la Fiabilité côté Appel), pas vérifiées contre un export réel. Le Water Point ID de ces lignes est renormalisé (colonne `De quel point d'eau s'agit-il? > Unique ID`, différente du formulaire actif), mais les autres champs propres au nouveau formulaire (`Signal code`, `Is the repair possible ?`, `Completion date of the work`) ne sont probablement pas présents sous ces mêmes noms sur l'ancien formulaire — ces réponses historiques ne seront donc détectées que par Complétude/Promptitude/Fiabilité, pas par Validité/Unicité/Cohérence, tant que ce mapping n'est pas complété.
+- Testé uniquement sur données synthétiques (logique des 6 dimensions, fusion de log, génération Excel) — pas encore sur un export réel du datagrid.
+
+```bash
+pip install -r requirements.txt
+export MWATER_USERNAME=... MWATER_PASSWORD=...
+export AZURE_TENANT_ID=... AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=...
+export SHAREPOINT_FOLDER_LINK=...
+export EMAIL_SENDER=... EMAIL_RECIPIENTS=...
+python -m reparation_apres_panne.verify_reparation_apres_panne
+```
 
 ---
 
