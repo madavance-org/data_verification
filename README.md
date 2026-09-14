@@ -6,7 +6,8 @@ Vérification automatisée des données mWater, sur la base des six dimensions d
 - `maintenance_preventive/` — Maintenance préventive (activité distincte de l'Appel : le formulaire rempli lors de l'intervention elle-même)
 - `carnet_de_bord/` — Carnet de bord (suivi véhicules)
 - `reparation_apres_panne/` — Réparation après panne
-- `utils/` — scripts transverses non liés à une seule activité (actuellement : diagnostics sur l'ensemble des points d'eau, indépendamment de toute activité)
+- `premiere_rehabilitation/` — Première réhabilitation (registre des points d'eau : créations, fusions/déduplication)
+- `utils/` — scripts transverses non liés à une seule activité
 
 ## `appel_maintenance_preventive/`
 
@@ -113,15 +114,6 @@ Testé le 21/07/2026 sur un export réel des 4 datagrids (3073 réponses Appel, 
 
 La logique de log (Nouveau / Toujours ouvert / Résolu) a été testée par simulation de deux exécutions successives : les statuts et dates de première/dernière détection et de résolution se comportent comme attendu. Pas encore testée en conditions réelles sur deux exécutions GitHub Actions successives.
 
-### `find_merged_water_points.py`
-
-Diagnostic ponctuel (pas de workflow dédié, exécution manuelle en local) : pour les réponses **Appel maintenance préventive** dont le Water Point ID est vide dans le datagrid, détermine si le point d'eau réellement saisi a depuis été fusionné (`_merged_entities`) dans une autre entité mWater plutôt que supprimé ou jamais renseigné.
-
-```bash
-export MWATER_USERNAME=... MWATER_PASSWORD=...
-python appel_maintenance_preventive/find_merged_water_points.py --csv sortie.csv
-```
-
 ---
 
 ## `maintenance_preventive/check_signal_code_format.py`
@@ -173,6 +165,28 @@ export AZURE_TENANT_ID=... AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=...
 export SHAREPOINT_FOLDER_LINK=...
 export EMAIL_SENDER=... EMAIL_RECIPIENTS=...
 python carnet_de_bord/verify_carnet_de_bord.py
+```
+
+---
+
+## `premiere_rehabilitation/find_merged_water_points.py`
+
+Diagnostic ponctuel (pas de workflow dédié, exécution manuelle en local), rattaché à Première réhabilitation car il porte sur le registre des points d'eau (créations, fusions/déduplication) plutôt que sur une activité de terrain en particulier — bien que les cas qu'il examine proviennent des réponses **Appel maintenance préventive**. Pour ces réponses dont le Water Point ID est vide dans le datagrid, détermine si le point d'eau réellement saisi a depuis été fusionné (`_merged_entities`) dans une autre entité mWater plutôt que supprimé ou jamais renseigné.
+
+```bash
+export MWATER_USERNAME=... MWATER_PASSWORD=...
+python premiere_rehabilitation/find_merged_water_points.py --csv sortie.csv
+```
+
+---
+
+## `utils/list_merged_water_points.py`
+
+Télécharge tel quel le datagrid mWater "Clean Water || Water Point" (colonnes "Unique ID" / "Previous mWater IDs" pour l'ensemble des points d'eau, indépendamment de toute activité) — vraiment transverse, contrairement à `find_merged_water_points.py` ci-dessus qui cible spécifiquement les réponses Appel. Exécution ponctuelle via `workflow_dispatch`, dépose le CSV sur SharePoint (`MWATER_MERGES_FOLDER_LINK`).
+
+```bash
+export MWATER_USERNAME=... MWATER_PASSWORD=...
+python utils/list_merged_water_points.py --csv sortie.csv [--upload]
 ```
 
 Plusieurs constantes restent provisoires, à affiner avec Lanja au fil de l'usage réel du script (voir commentaires dans le code) : `COMPTEUR_TRAJET_MAX_KM`, `GPS_ACCURACY_DEFAUT_M`, `GPS_TOLERANCE_MARGE`, `GPS_TOLERANCE_PLANCHER_KM`, `SIMILARITE_NOM_SEUIL`.
