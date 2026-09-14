@@ -24,4 +24,4 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           MWATER_MERGES_FOLDER_LINK: ${{ secrets.MWATER_MERGES_FOLDER_LINK }}
-        run: python list_merged_water_points.py --csv "Clean Water - Water Point.csv" --upload
+        run: python -m utils.list_merged_water_points --csv "Clean Water - Water Point.csv" --upload

@@ -24,23 +24,19 @@ Réutilise l'authentification mWater/Graph et la logique de log (Nouveau /
 Toujours ouvert / Résolu) de verify_maintenance_preventive.py dans ce même repo.
 """
 
-import base64
-import csv
 import difflib
-import io
 import math
 import os
-import sys
 from collections import Counter, defaultdict
 from datetime import datetime
 
-import requests
+from common.dates import parse_dt
+from common.mwater_client import download_datagrid, mwater_login
+from common.sharepoint import download_existing_log, graph_token, resolve_share_link, send_html_email, upload_to_sharepoint
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-
-MWATER_API_BASE = "https://api.mwater.co/v3"
 
 # ID du datagrid mWater "Carnet de bord" (préconfiguré dans le portail, pas un secret)
 DATAGRID_CARNET = "d30af8d9ab7b4bb3b0aae2adbcce622f"
@@ -85,60 +81,9 @@ GPS_TOLERANCE_PLANCHER_KM = 5.0
 SIMILARITE_NOM_SEUIL = 0.82
 
 
-def raise_for_status_verbose(response):
-    """Comme dans verify_maintenance_preventive.py : loggue le corps complet en cas d'erreur HTTP."""
-    if not response.ok:
-        print(f"HTTP {response.status_code} sur {response.url}", file=sys.stderr)
-        print(response.text[:2000], file=sys.stderr)
-        response.raise_for_status()
-
-
-# ---------------------------------------------------------------------------
-# mWater : authentification et téléchargement du datagrid
-# ---------------------------------------------------------------------------
-
-def mwater_login(username, password):
-    resp = requests.post(
-        f"{MWATER_API_BASE}/clients",
-        json={"username": username, "password": password},
-        timeout=30,
-    )
-    raise_for_status_verbose(resp)
-    client_id = resp.json().get("client")
-    if not client_id:
-        raise RuntimeError("Authentification mWater : champ 'client' absent de la réponse")
-    return client_id
-
-
-def download_datagrid(datagrid_id, client_id):
-    """Télécharge un datagrid mWater et le retourne comme liste de dict (une par ligne)."""
-    resp = requests.get(
-        f"{MWATER_API_BASE}/datagrids/{datagrid_id}/download",
-        params={"client": client_id, "share": "", "extraFilters": "[]", "format": "csv"},
-        timeout=120,
-    )
-    raise_for_status_verbose(resp)
-    text = resp.content.decode("utf-8-sig")
-    reader = csv.DictReader(io.StringIO(text))
-    return list(reader)
-
-
 # ---------------------------------------------------------------------------
 # Utilitaires de parsing
 # ---------------------------------------------------------------------------
-
-def parse_dt(value):
-    """Parse un horodatage mWater 'AAAA-MM-JJ HH:MM:SS' ou une date 'AAAA-MM-JJ'."""
-    value = (value or "").strip()
-    if not value:
-        return None
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
-        try:
-            return datetime.strptime(value, fmt)
-        except ValueError:
-            continue
-    return None
-
 
 def parse_float(value):
     value = (value or "").strip()
@@ -576,43 +521,6 @@ def anomaly_key(a):
     return (a.dimension, a.subdimension, a.response_code, a.description, a.vehicule)
 
 
-def find_child_item_id(token, drive_id, folder_item_id, file_name):
-    resp = requests.get(
-        f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{folder_item_id}/children",
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=60,
-    )
-    raise_for_status_verbose(resp)
-    for item in resp.json().get("value", []):
-        if item.get("name") == file_name:
-            return item.get("id")
-    return None
-
-
-def download_existing_log(token, drive_id, folder_item_id, file_name):
-    item_id = find_child_item_id(token, drive_id, folder_item_id, file_name)
-    if not item_id:
-        return []
-
-    resp = requests.get(
-        f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{item_id}/content",
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=60,
-    )
-    raise_for_status_verbose(resp)
-
-    from openpyxl import load_workbook
-    wb = load_workbook(io.BytesIO(resp.content))
-    ws = wb["Anomalies"]
-    headers = [c.value for c in ws[1]]
-    rows = []
-    for values in ws.iter_rows(min_row=2, values_only=True):
-        row = dict(zip(headers, values))
-        if row.get("Dimension"):
-            rows.append(row)
-    return rows
-
-
 def build_submitted_on_lookup(rows):
     lookup = {}
     for r in rows:
@@ -714,59 +622,6 @@ def build_log_report(merged_rows, output_path):
 # (identique à verify_maintenance_preventive.py)
 # ---------------------------------------------------------------------------
 
-def graph_token(tenant_id, client_id, client_secret):
-    resp = requests.post(
-        f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "scope": "https://graph.microsoft.com/.default",
-        },
-        timeout=30,
-    )
-    raise_for_status_verbose(resp)
-    return resp.json()["access_token"]
-
-
-def resolve_share_link(token, share_url):
-    b64 = base64.b64encode(share_url.encode("utf-8")).decode("utf-8")
-    encoded = "u!" + b64.replace("+", "-").replace("/", "_").rstrip("=")
-    resp = requests.get(
-        f"https://graph.microsoft.com/v1.0/shares/{encoded}/driveItem",
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=30,
-    )
-    raise_for_status_verbose(resp)
-    data = resp.json()
-    return data["parentReference"]["driveId"], data["id"]
-
-
-def upload_to_sharepoint(token, drive_id, folder_item_id, file_path, file_name):
-    with open(file_path, "rb") as f:
-        content = f.read()
-
-    item_id = find_child_item_id(token, drive_id, folder_item_id, file_name)
-    if not item_id:
-        resp = requests.post(
-            f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{folder_item_id}/children",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"name": file_name, "file": {}, "@microsoft.graph.conflictBehavior": "replace"},
-            timeout=60,
-        )
-        raise_for_status_verbose(resp)
-        item_id = resp.json()["id"]
-
-    resp = requests.put(
-        f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{item_id}/content",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/octet-stream"},
-        data=content,
-        timeout=120,
-    )
-    raise_for_status_verbose(resp)
-    return resp.json()
-
-
 def send_confirmation_email(token, sender, recipients, file_name, open_count, new_count,
                              resolved_count, deleted_count, counts_by_dimension):
     lines = "".join(f"<li>{dim} : {n}</li>" for dim, n in counts_by_dimension.items())
@@ -779,19 +634,7 @@ def send_confirmation_email(token, sender, recipients, file_name, open_count, ne
         f"<p>Fiabilité n'est pas incluse (contrôle documentaire manuel).</p>"
         f"<p>Log mis à jour sur SharePoint : <b>{file_name}</b></p>"
     )
-    resp = requests.post(
-        f"https://graph.microsoft.com/v1.0/users/{sender}/sendMail",
-        headers={"Authorization": f"Bearer {token}"},
-        json={
-            "message": {
-                "subject": f"Vérification de données — {file_name}",
-                "body": {"contentType": "HTML", "content": body_html},
-                "toRecipients": [{"emailAddress": {"address": addr.strip()}} for addr in recipients.split(",")],
-            }
-        },
-        timeout=30,
-    )
-    raise_for_status_verbose(resp)
+    send_html_email(token, sender, recipients, f"Vérification de données — {file_name}", body_html)
 
 
 # ---------------------------------------------------------------------------

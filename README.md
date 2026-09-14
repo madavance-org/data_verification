@@ -1,8 +1,35 @@
 # data_verification
 
-Vérification automatisée des données mWater pour l'activité **Appel maintenance préventive**, sur la base des six dimensions du Manuel de vérification de données MadAvance (Complétude, Promptitude, Validité, Unicité, Cohérence, Fiabilité).
+Vérification automatisée des données mWater, sur la base des six dimensions du Manuel de vérification de données MadAvance (Complétude, Promptitude, Validité, Unicité, Cohérence, Fiabilité). Un dossier par activité :
 
-Le script `verify_maintenance_preventive.py` :
+- `appel_maintenance_preventive/` — Appel maintenance préventive
+- `maintenance_preventive/` — Maintenance préventive (activité distincte de l'Appel : le formulaire rempli lors de l'intervention elle-même)
+- `carnet_de_bord/` — Carnet de bord (suivi véhicules)
+- `reparation_apres_panne/` — Réparation après panne
+- `premiere_rehabilitation/` — Première réhabilitation (registre des points d'eau : créations, fusions/déduplication)
+- `utils/` — scripts transverses non liés à une seule activité
+
+## Module partagé `common/`
+
+Regroupe le code d'infrastructure identique (ou presque) d'un script à l'autre : authentification et lecture mWater (`common/mwater_client.py`), résolution des fusions de points d'eau (`common/water_point_merges.py`), SharePoint/email via Microsoft Graph (`common/sharepoint.py`), aide HTTP (`common/http_utils.py`), parsing de dates (`common/dates.py`). Chaque script d'activité l'importe (`from common.mwater_client import ...`) plutôt que de dupliquer ces fonctions — un correctif dans `common/` profite immédiatement à tous les scripts qui l'utilisent, au lieu d'avoir à le répercuter dans chaque copie séparément.
+
+Ce que `common/` ne contient PAS : les six dimensions de vérification (règles métier propres à chaque activité), la logique de log Nouveau/Toujours ouvert/Résolu (les schémas de log diffèrent trop d'un script à l'autre pour être unifiés sans perdre en lisibilité — ex. gestion du statut "Supprimé" côté Appel, absente ailleurs), et tout ce qui n'est utilisé que par un seul script (ex. l'insertion du log dans un formulaire mWater dédié, spécifique à `verify_maintenance_preventive.py`).
+
+Pour que les imports `common.*` fonctionnent, chaque script se lance comme un **module**, depuis la racine du repo — jamais par chemin de fichier direct :
+
+```bash
+python -m appel_maintenance_preventive.verify_maintenance_preventive   # et pas python appel_maintenance_preventive/verify_maintenance_preventive.py
+```
+
+Les workflows GitHub Actions (`.github/workflows/*.yml`) utilisent déjà cette syntaxe.
+
+## `appel_maintenance_preventive/`
+
+### `verify_maintenance_preventive.py`
+
+Vérification automatisée des données mWater pour l'activité **Appel maintenance préventive**.
+
+Ce script :
 
 1. S'authentifie sur l'API mWater et télécharge 4 datagrids déjà configurés dans le portail (Appel maintenance préventive, Maintenance préventive, Réparation après panne, Première réhabilitation).
 2. Applique les règles de vérification (voir le détail dans le manuel ClickUp lié).
@@ -92,7 +119,7 @@ export MWATER_USERNAME=... MWATER_PASSWORD=...
 export AZURE_TENANT_ID=... AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=...
 export SHAREPOINT_DRIVE_ID=... SHAREPOINT_FOLDER_ITEM_ID=...
 export EMAIL_SENDER=... EMAIL_RECIPIENTS=...
-python verify_maintenance_preventive.py
+python -m appel_maintenance_preventive.verify_maintenance_preventive
 ```
 
 ## Test de validation (logique seule, sans upload)
@@ -103,7 +130,29 @@ La logique de log (Nouveau / Toujours ouvert / Résolu) a été testée par simu
 
 ---
 
-# Script `verify_carnet_de_bord.py` — Carnet de bord
+## `maintenance_preventive/check_signal_code_format.py`
+
+Vérification ponctuelle (workflow_dispatch, pas de cron) du format du champ "Signal code" tel que saisi directement dans le formulaire **Maintenance préventive**, indépendamment de la Validité "Signal reference" déjà vérifiée côté Appel maintenance préventive. Format attendu : `{DEPLOYMENT}_{JJMMAAAA}_{E|S}{N}`. Log dédié `data_verification_signal_code_maintenance_log.xlsx` (même principe Nouveau / Toujours ouvert / Résolu que les autres scripts).
+
+```bash
+pip install -r requirements.txt
+export MWATER_USERNAME=... MWATER_PASSWORD=...
+export AZURE_TENANT_ID=... AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=...
+export SHAREPOINT_FOLDER_LINK=...
+python -m maintenance_preventive.check_signal_code_format
+```
+
+> Historique : ce script et le contrôle Réparation après panne provenaient d'un unique `check_signal_code_format.py` couvrant les deux formulaires avec un log combiné (`data_verification_signal_code_log.xlsx`, plus mis à jour). Contrairement à Maintenance préventive, la partie Réparation après panne n'est **pas** conservée comme script séparé : sa logique (regex de format, correction automatique) sera reprise directement dans `reparation_apres_panne/verify_reparation_apres_panne.py` (à écrire) comme dimension Validité, au même titre que les 5 autres dimensions et dans le même log — pas de log séparé pour ce seul contrôle.
+
+---
+
+## `reparation_apres_panne/`
+
+Dossier en préparation : `verify_reparation_apres_panne.py` (à écrire) couvrira les 6 dimensions pour cette activité, dont la Validité du format Signal code en reprenant la logique de `maintenance_preventive/check_signal_code_format.py` (voir note ci-dessus).
+
+---
+
+## `carnet_de_bord/verify_carnet_de_bord.py` — Carnet de bord
 
 Vérification automatisée des données mWater pour l'activité **Carnet de bord** (suivi véhicules : trajets, carburant, lavage, entretien/maintenance, renouvellement de documents administratifs), sur cinq des six dimensions du Manuel de vérification de données MadAvance (Complétude, Promptitude, Validité, Unicité, Cohérence). La sixième, **Fiabilité**, n'est pas automatisée : elle consiste en un rapprochement documentaire (facture/fiche physique <-> saisie mWater), un contrôle manuel volontairement hors de portée du script (voir le manuel ClickUp lié).
 
@@ -129,7 +178,29 @@ export MWATER_USERNAME=... MWATER_PASSWORD=...
 export AZURE_TENANT_ID=... AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=...
 export SHAREPOINT_FOLDER_LINK=...
 export EMAIL_SENDER=... EMAIL_RECIPIENTS=...
-python verify_carnet_de_bord.py
+python -m carnet_de_bord.verify_carnet_de_bord
+```
+
+---
+
+## `premiere_rehabilitation/find_merged_water_points.py`
+
+Diagnostic ponctuel (pas de workflow dédié, exécution manuelle en local), rattaché à Première réhabilitation car il porte sur le registre des points d'eau (créations, fusions/déduplication) plutôt que sur une activité de terrain en particulier — bien que les cas qu'il examine proviennent des réponses **Appel maintenance préventive**. Pour ces réponses dont le Water Point ID est vide dans le datagrid, détermine si le point d'eau réellement saisi a depuis été fusionné (`_merged_entities`) dans une autre entité mWater plutôt que supprimé ou jamais renseigné.
+
+```bash
+export MWATER_USERNAME=... MWATER_PASSWORD=...
+python -m premiere_rehabilitation.find_merged_water_points --csv sortie.csv
+```
+
+---
+
+## `utils/list_merged_water_points.py`
+
+Télécharge tel quel le datagrid mWater "Clean Water || Water Point" (colonnes "Unique ID" / "Previous mWater IDs" pour l'ensemble des points d'eau, indépendamment de toute activité) — vraiment transverse, contrairement à `find_merged_water_points.py` ci-dessus qui cible spécifiquement les réponses Appel. Exécution ponctuelle via `workflow_dispatch`, dépose le CSV sur SharePoint (`MWATER_MERGES_FOLDER_LINK`).
+
+```bash
+export MWATER_USERNAME=... MWATER_PASSWORD=...
+python -m utils.list_merged_water_points --csv sortie.csv [--upload]
 ```
 
 Plusieurs constantes restent provisoires, à affiner avec Lanja au fil de l'usage réel du script (voir commentaires dans le code) : `COMPTEUR_TRAJET_MAX_KM`, `GPS_ACCURACY_DEFAUT_M`, `GPS_TOLERANCE_MARGE`, `GPS_TOLERANCE_PLANCHER_KM`, `SIMILARITE_NOM_SEUIL`.
