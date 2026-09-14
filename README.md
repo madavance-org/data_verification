@@ -156,7 +156,7 @@ Différences avec `verify_maintenance_preventive.py` (Appel) :
 - Fichier de log dédié (`data_verification_reparation_log.xlsx`), distinct de celui d'Appel — décision du 14/09/2026 de ne pas partager un seul fichier entre activités.
 - Format Signal code (dimension Validité, avec correction automatique proposée) : logique reprise de `common/signal_code.py`, la même que `maintenance_preventive/check_signal_code_format.py`.
 
-Exécution automatique hebdomadaire via GitHub Actions (lundi 07:30 UTC), ou manuelle via `workflow_dispatch`. Insertion parallèle dans le même formulaire mWater dédié qu'Appel (`1febfeabe8054be6979350b81d1652fe`), avec le déploiement propre à Réparation après panne — **pas encore renseigné** (`DEPLOYMENT_LOG_VERIFICATION` / `ENUMERATEUR_LOG_VERIFICATION` à `None` en tête de script) : l'insertion est sautée avec un avertissement tant que ces IDs n'ont pas été trouvés en testant dans le portail (voir la même découverte faite pour Appel le 02/09/2026). Le fichier Excel/SharePoint reste la source fiable dans l'intervalle.
+Exécution automatique hebdomadaire via GitHub Actions (lundi 07:30 UTC), ou manuelle via `workflow_dispatch`. Insertion parallèle dans le même formulaire mWater dédié qu'Appel (`1febfeabe8054be6979350b81d1652fe`), avec le déploiement propre à Réparation après panne (`8b541444ac4e465bb93d0aad0d4dff68`, donné par Lanja le 14/09/2026) et le même énumérateur qu'Appel (Lanja est aussi la personne autorisée sur ce déploiement) — pas encore testée en conditions réelles (l'insertion mWater reste non bloquante : si elle échoue, le fichier Excel/SharePoint reste la source fiable).
 
 ### ⚠️ À valider avant mise en production
 

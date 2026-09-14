@@ -104,13 +104,13 @@ STATUT_CHOICE_IDS = {
     "Résolu": "3znmNE5",
 }
 
-# À COMPLETER : déploiement du formulaire "Réparation après panne" et identifiant de
-# l'énumérateur autorisé à soumettre dessus (même mécanisme que côté Appel — voir
-# DEPLOYMENT_LOG_VERIFICATION dans verify_maintenance_preventive.py — pas encore trouvés
-# pour cette activité au 14/09/2026). Tant qu'ils sont None, l'insertion mWater est
-# sautée avec un avertissement ; le fichier Excel/SharePoint reste la source fiable.
-DEPLOYMENT_LOG_VERIFICATION = None
-ENUMERATEUR_LOG_VERIFICATION = None
+# Déploiement Réparation après panne du formulaire de log (donné par Lanja le 14/09/2026).
+DEPLOYMENT_LOG_VERIFICATION = "8b541444ac4e465bb93d0aad0d4dff68"
+
+# Même énumérateur que pour Appel maintenance préventive (voir
+# ENUMERATEUR_LOG_VERIFICATION dans verify_maintenance_preventive.py) : Lanja est aussi
+# la personne autorisée à soumettre sur ce déploiement.
+ENUMERATEUR_LOG_VERIFICATION = "0336889caebc433d8ab0bba5dc919bed"
 
 
 def parse_log_date(value):
