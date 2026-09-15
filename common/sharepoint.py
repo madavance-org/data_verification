@@ -68,7 +68,15 @@ def download_existing_log(token, drive_id, folder_item_id, file_name,
     ('Dimension' pour un script à 6 dimensions, 'Formulaire' pour un contrôle ponctuel par
     formulaire). `row_hook`, si fourni, est appliqué à chaque ligne lue (ex. migration d'un
     ancien format de log — voir migrer_ligne_champ_concerne dans verify_maintenance_preventive.py,
-    qui reste spécifique à ce script et n'est pas partagée ici)."""
+    qui reste spécifique à ce script et n'est pas partagée ici).
+
+    Normalise les cellules vides (None, tel que renvoyé par openpyxl) en chaîne vide "" :
+    sans ça, une clé de suivi construite à partir d'une anomalie fraîchement détectée (qui
+    vaut toujours "" pour un champ vide, ex. Water Point ID manquant) ne correspond jamais à
+    la même ligne relue depuis ce fichier (qui vaudrait None) — l'anomalie n'est alors jamais
+    reconnue comme "toujours ouverte" d'une exécution à l'autre, et le log recrée une nouvelle
+    ligne "Nouveau" à chaque fois. Bug réel constaté le 15/09/2026 sur des anomalies sans point
+    d'eau (jusqu'à 38 lignes dupliquées pour une seule anomalie sur ~2 mois)."""
     item_id = find_child_item_id(token, drive_id, folder_item_id, file_name)
     if not item_id:
         return []
@@ -86,7 +94,7 @@ def download_existing_log(token, drive_id, folder_item_id, file_name,
     headers = [c.value for c in ws[1]]
     rows = []
     for values in ws.iter_rows(min_row=2, values_only=True):
-        row = dict(zip(headers, values))
+        row = {h: ("" if v is None else v) for h, v in zip(headers, values)}
         if row.get(key_column):
             rows.append(row_hook(row) if row_hook else row)
     return rows
