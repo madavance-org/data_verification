@@ -1,0 +1,29 @@
+name: Nettoyage des doublons du registre mWater
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Supprimer réellement (sinon simulation : aucune écriture)"
+        type: boolean
+        default: false
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+
+      - name: Nettoyer le registre
+        env:
+          MWATER_USERNAME: ${{ secrets.MWATER_USERNAME }}
+          MWATER_PASSWORD: ${{ secrets.MWATER_PASSWORD }}
+          APPLY_FLAG: ${{ inputs.apply && '--apply' || '' }}
+        run: python -m utils.clean_registry_duplicates $APPLY_FLAG

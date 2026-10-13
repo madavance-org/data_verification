@@ -216,6 +216,12 @@ python -m premiere_rehabilitation.find_merged_water_points --csv sortie.csv
 
 ---
 
+## `utils/clean_registry_duplicates.py`
+
+Nettoie les doublons du registre mWater (« MadAvance || Vérification de données »). Pour chaque anomalie (déploiement + Response Code + Dimension + Sous-dimension + Description + point d'eau), garde la ligne la plus récente et supprime les autres. Lancé à la main via GitHub Actions (« Nettoyage des doublons du registre mWater »). **Simulation par défaut** : sans cocher « apply », le workflow affiche seulement les chiffres. En mode réel, il essaie d'abord une suppression sur une seule ligne, bascule sur le rejet si mWater la refuse, et s'arrête au moindre doute (3 échecs consécutifs). La suppression via l'API n'avait jamais été testée dans ce repo.
+
+---
+
 ## `utils/list_merged_water_points.py`
 
 Télécharge tel quel le datagrid mWater "Clean Water || Water Point" (colonnes "Unique ID" / "Previous mWater IDs" pour l'ensemble des points d'eau, indépendamment de toute activité) — vraiment transverse, contrairement à `find_merged_water_points.py` ci-dessus qui cible spécifiquement les réponses Appel. Exécution ponctuelle via `workflow_dispatch`, dépose le CSV sur SharePoint (`MWATER_MERGES_FOLDER_LINK`).
