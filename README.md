@@ -11,7 +11,7 @@ Vérification automatisée des données mWater, sur la base des six dimensions d
 
 ## Module partagé `common/`
 
-Regroupe le code d'infrastructure identique (ou presque) d'un script à l'autre : authentification et lecture mWater (`common/mwater_client.py`), résolution des fusions de points d'eau (`common/water_point_merges.py`), SharePoint/email via Microsoft Graph (`common/sharepoint.py`), aide HTTP (`common/http_utils.py`), parsing de dates (`common/dates.py`). Chaque script d'activité l'importe (`from common.mwater_client import ...`) plutôt que de dupliquer ces fonctions — un correctif dans `common/` profite immédiatement à tous les scripts qui l'utilisent, au lieu d'avoir à le répercuter dans chaque copie séparément.
+Regroupe le code d'infrastructure identique (ou presque) d'un script à l'autre : authentification et lecture mWater (`common/mwater_client.py`), résolution des fusions de points d'eau (`common/water_point_merges.py`), SharePoint/email via Microsoft Graph (`common/sharepoint.py`), aide HTTP (`common/http_utils.py`), parsing de dates (`common/dates.py`), format du Signal code (`common/signal_code.py`), écriture dans le registre mWater des anomalies (`common/mwater_registry.py`, utilisé pour l'instant par Maintenance préventive régulière uniquement). Chaque script d'activité l'importe (`from common.mwater_client import ...`) plutôt que de dupliquer ces fonctions — un correctif dans `common/` profite immédiatement à tous les scripts qui l'utilisent, au lieu d'avoir à le répercuter dans chaque copie séparément.
 
 Ce que `common/` ne contient PAS : les six dimensions de vérification (règles métier propres à chaque activité), la logique de log Nouveau/Toujours ouvert/Résolu (les schémas de log diffèrent trop d'un script à l'autre pour être unifiés sans perdre en lisibilité — ex. gestion du statut "Supprimé" côté Appel, absente ailleurs), et tout ce qui n'est utilisé que par un seul script (ex. l'insertion du log dans un formulaire mWater dédié, spécifique à `verify_maintenance_preventive.py`).
 
@@ -143,6 +143,25 @@ python -m maintenance_preventive.check_signal_code_format
 ```
 
 > Historique : ce script et le contrôle Réparation après panne provenaient d'un unique `check_signal_code_format.py` couvrant les deux formulaires avec un log combiné (`data_verification_signal_code_log.xlsx`, plus mis à jour). Contrairement à Maintenance préventive, la partie Réparation après panne n'est **pas** conservée comme script séparé : sa logique (regex de format, correction automatique, désormais dans `common/signal_code.py`) est reprise dans `reparation_apres_panne/verify_reparation_apres_panne.py` comme dimension Validité, au même titre que les 5 autres dimensions et dans le même log — pas de log séparé pour ce seul contrôle.
+
+---
+
+## `maintenance_preventive/verify_maintenance_preventive_reguliere.py`
+
+Vérification automatisée des 6 dimensions pour **Maintenance préventive régulière** (formulaire `de26d89a5c8a4452b42158c622be20d0`, datagrid `2cfe0ba7ac264d119cfc8964b5f3cebc`), selon le manuel ClickUp « Maintenance préventive régulière ». Exécution automatique hebdomadaire (lundi 08:00 UTC) ou manuelle via `workflow_dispatch`. Log dédié `data_verification_maintenance_reguliere_log.xlsx`.
+
+- Les règles croisées avec Appel (signal code présent dans le bon formulaire, date du code ≤ date de complétion) ne sont pas refaites ici.
+- Noms de colonnes résolus à l'exécution (le formulaire écrit `properly?`, le manuel `properly ?`) : une colonne introuvable fait sauter les contrôles concernés avec un avertissement listant les colonnes disponibles, au lieu de produire de fausses anomalies.
+- **Fiabilité** : liste des points d'eau réhabilités avec succès construite depuis les réponses brutes de l'ancien formulaire combiné, avec les questions de la section « First rehabilitation » (`931b62d9…` « Check: Was the repair or maintenance successful? » et `22b7e585…` « Verify: confirmation from local representative… », toutes deux = Yes), pas celles de la section « Réparation après panne » aux libellés presque identiques. Un ID absent de la liste est une anomalie ; un rejet « ID incorrect » ne compte que s'il est toujours actif.
+- **Registre mWater** : met à jour la ligne existante (clé Response Code + Dimension + Sous-dimension + Description) au lieu d'en recréer une à chaque exécution. Sauté tant que `DEPLOYMENT_LOG_VERIFICATION` n'est pas renseigné en tête de script (déploiement « Maintenance préventive régulière » du formulaire registre à récupérer dans le portail mWater).
+
+```bash
+python -m maintenance_preventive.verify_maintenance_preventive_reguliere
+```
+
+### ⚠️ À valider avant mise en production
+- Premier passage sur les vraies données : vérifier dans les logs la résolution des colonnes, et que la liste Fiabilité compte environ 725 points d'eau.
+- Valeurs de choix attendues en anglais (`Yes` / `Partly` / `No`), comme dans la définition du formulaire.
 
 ---
 
