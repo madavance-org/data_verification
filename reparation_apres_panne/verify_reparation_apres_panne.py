@@ -69,6 +69,14 @@ FORM_REPARATION_ACTIF = "958b4763788348d699e7d8c5821f92ee"
 # — à vérifier avant la première exécution en production.
 LEGACY_TYPES_TRAVAUX_REPARATION = {"Réparation après panne", "Entretien préventif régulier"}
 
+# Valeurs des questions Oui/Non du formulaire : les libellés mWater sont en anglais
+# (Yes/No) ; les libellés français sont acceptés au cas où. Première version écrite avec
+# Oui/Non seulement : toutes les réponses étaient signalées à tort (440 fausses anomalies
+# constatées au 13/10/2026) et les contrôles de Cohérence ne se déclenchaient jamais.
+YES_VALUES = {"yes", "oui"}
+NO_VALUES = {"no", "non"}
+YES_NO_VALUES = YES_VALUES | NO_VALUES
+
 # Fichier de log dédié à cette activité (distinct de celui d'Appel maintenance préventive
 # — décision du 14/09/2026 : pas de fichier partagé entre activités).
 LOG_FILE_NAME = "data_verification_reparation_log.xlsx"
@@ -473,18 +481,18 @@ def check_validite(reparation_rows):
             ))
 
         repair_possible = (r.get("Is the repair possible ?") or "").strip()
-        if repair_possible and repair_possible not in ("Oui", "Non"):
+        if repair_possible and repair_possible.lower() not in YES_NO_VALUES:
             anomalies.append(Anomaly(
                 "Validité", "Valeur 'Is the repair possible ?'", rc, wp,
-                "Hors des valeurs attendues (Oui/Non)",
+                "Hors des valeurs attendues (Yes/No)",
                 champ_concerne=repair_possible,
             ))
 
         repair_successful = (r.get("Is the repair succesfull ?") or "").strip()
-        if repair_successful and repair_successful not in ("Oui", "Non"):
+        if repair_successful and repair_successful.lower() not in YES_NO_VALUES:
             anomalies.append(Anomaly(
                 "Validité", "Valeur 'Is the repair succesfull ?'", rc, wp,
-                "Hors des valeurs attendues (Oui/Non)",
+                "Hors des valeurs attendues (Yes/No)",
                 champ_concerne=repair_successful,
             ))
     return anomalies
@@ -550,7 +558,7 @@ def check_coherence(reparation_rows):
         repair_successful = (r.get("Is the repair succesfull ?") or "").strip()
         completion_date = (r.get("Completion date of the work") or "").strip()
 
-        if repair_possible == "Non":
+        if repair_possible.lower() in NO_VALUES:
             if repair_successful or completion_date:
                 anomalies.append(Anomaly(
                     "Cohérence", "Champs conditionnels incohérents", rc, wp,
@@ -559,7 +567,7 @@ def check_coherence(reparation_rows):
                     details=f"Is the repair succesfull ? = '{repair_successful}' / "
                             f"Completion date of the work = '{completion_date}'",
                 ))
-        elif repair_possible == "Oui":
+        elif repair_possible.lower() in YES_VALUES:
             if not repair_successful:
                 anomalies.append(Anomaly(
                     "Cohérence", "Champs conditionnels incohérents", rc, wp,
