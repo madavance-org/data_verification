@@ -196,10 +196,26 @@ def fetch_form_rev(form_id, client_id):
     return resp.json()["_rev"]
 
 
+def existing_log_response_key(item):
+    """Clé de correspondance pour une réponse mWater déjà présente dans le formulaire de
+    log, lue directement dans `data` (Response Code, Dimension, Sous-dimension,
+    Description) — PAS le Response Code seul (collision entre anomalies distinctes
+    partageant un même Response Code), ni le Water Point ID (illisible de façon fiable
+    une fois soumis : voir la même correction faite le 15/09/2026 dans
+    verify_maintenance_preventive.py, suite à 1429 doublons constatés dans ce même
+    formulaire à cause de ce genre de clé trop fragile)."""
+    data = item.get("data", {})
+    return (
+        (data.get(Q_RESPONSE_CODE) or {}).get("value"),
+        (data.get(Q_DIMENSION) or {}).get("value"),
+        (data.get(Q_SOUS_DIMENSION) or {}).get("value"),
+        (data.get(Q_DESCRIPTION) or {}).get("value"),
+    )
+
+
 def fetch_existing_log_responses(client_id):
-    """Récupère les réponses déjà présentes dans le formulaire de log mWater, indexées
-    par Response Code (voir verify_maintenance_preventive.py pour la limite connue sur
-    les collisions de clé)."""
+    """Récupère les réponses déjà présentes dans le formulaire de log mWater, indexées par
+    existing_log_response_key(), pour décider update vs create."""
     import json
     import requests
     from common.http_utils import raise_for_status_verbose
@@ -210,12 +226,12 @@ def fetch_existing_log_responses(client_id):
         timeout=60,
     )
     raise_for_status_verbose(resp)
-    by_rc = {}
+    by_key = {}
     for item in resp.json():
-        rc = (item.get("data", {}).get(Q_RESPONSE_CODE) or {}).get("value")
-        if rc:
-            by_rc[rc] = item["_id"]
-    return by_rc
+        key = existing_log_response_key(item)
+        if key[0]:
+            by_key[key] = item["_id"]
+    return by_key
 
 
 def inserer_log_dans_mwater(merged_rows, client_id):
@@ -236,7 +252,7 @@ def inserer_log_dans_mwater(merged_rows, client_id):
 
     print("Insertion du log dans mWater (formulaire de log dédié)...")
     form_rev = fetch_form_rev(FORM_LOG_VERIFICATION, client_id)
-    existing_by_rc = fetch_existing_log_responses(client_id)
+    existing_by_key = fetch_existing_log_responses(client_id)
 
     created, updated, ignored = 0, 0, 0
     for row in merged_rows:
@@ -244,7 +260,9 @@ def inserer_log_dans_mwater(merged_rows, client_id):
         if payload is None:
             ignored += 1
             continue
-        response_id = existing_by_rc.get(row.get("Response Code"))
+        row_key = (row.get("Response Code"), row.get("Dimension"), row.get("Sous-dimension"),
+                   row.get("Description"))
+        response_id = existing_by_key.get(row_key)
         now = datetime.utcnow().isoformat() + "Z"
         document = {
             "_id": response_id or uuid.uuid4().hex,

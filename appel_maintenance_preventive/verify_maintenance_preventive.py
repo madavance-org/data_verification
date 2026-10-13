@@ -249,35 +249,38 @@ def build_mwater_log_response(row, client_id):
 
 
 def existing_log_response_key(item):
-    """Cle de correspondance (Response Code, Water Point ID) pour une reponse mWater deja
-    presente dans le formulaire de log - memes cle que anomaly_key() cote Excel (voir son
-    docstring : le Response Code seul n'est pas suffisant, plusieurs anomalies distinctes
-    peuvent le partager). Le Water Point ID est retrouve via le tableau `entities` de la
-    reponse brute (meme mecanisme que extract_water_point_code, deja utilise plus haut dans
-    ce fichier pour la meme raison), puisque le champ Site du formulaire ne restitue pas
-    directement le code d'origine dans `data`.
+    """Clé de correspondance pour une réponse mWater déjà présente dans le formulaire de
+    log, utilisée pour décider update vs create.
 
-    Limite connue : pour les lignes tombees sur le point d'eau 'Inconnu' de repli (Water
-    Point ID invalide/manquant a l'origine), le code stocke cote mWater est celui de
-    l'entite de repli, pas la valeur brute d'origine (vide ou invalide) - la correspondance
-    ne peut donc pas se faire pour ces lignes precises : chaque run les recreera plutot que
-    de les mettre a jour, ce qui accumulera des doublons dans mWater pour ces cas-la
-    specifiquement. A ameliorer plus tard si besoin (ex. stocker la valeur brute d'origine
-    dans un champ dedie du formulaire)."""
+    Basée sur (Response Code, Dimension, Sous-dimension, Description), lus directement
+    dans `data` — PAS sur le Water Point ID. Corrigé le 15/09/2026 : l'ancienne version
+    tentait de retrouver le Water Point ID via le tableau `entities` de la réponse
+    (comme extract_water_point_code), mais ce tableau est TOUJOURS vide quand le champ
+    Site n'a pas pu être renseigné à l'insertion (Water Point ID manquant/invalide sur
+    l'anomalie d'origine) — dans ce cas, aucune correspondance n'était jamais trouvée, et
+    chaque exécution recréait une nouvelle entrée au lieu de mettre à jour l'existante.
+    Constaté en conditions réelles : 464 doublons accumulés en ~2 semaines pour la seule
+    anomalie 'Etiennah MadAvance-DQQBXQ' (Water Point ID absent), 1429 au total sur
+    l'ensemble du formulaire.
+
+    Limite connue et acceptée : deux anomalies distinctes qui partageraient exactement
+    Response Code + Dimension + Sous-dimension + Description mais concerneraient des
+    points d'eau différents (cas déjà documenté dans anomaly_key(), plus rare) seraient
+    confondues ici, l'une écrasant l'autre dans ce formulaire. Sans impact sur la source
+    fiable (fichier Excel/SharePoint, qui distingue bien ces cas) : ce formulaire
+    n'alimente qu'un tableau de bord annexe."""
     data = item.get("data", {})
-    rc = (data.get(Q_RESPONSE_CODE) or {}).get("value")
-    wp_code = extract_water_point_code(item)
-    if not is_valid_water_point_id(wp_code or ""):
-        wp_code = None
-    return (rc, wp_code)
+    return (
+        (data.get(Q_RESPONSE_CODE) or {}).get("value"),
+        (data.get(Q_DIMENSION) or {}).get("value"),
+        (data.get(Q_SOUS_DIMENSION) or {}).get("value"),
+        (data.get(Q_DESCRIPTION) or {}).get("value"),
+    )
 
 
 def fetch_existing_log_responses(client_id):
-    """Recupere les reponses deja presentes dans le formulaire de log mWater, indexees par
-    (Response Code, Water Point ID) - voir existing_log_response_key() - pour decider update
-    vs create sans ecraser des anomalies distinctes partageant le meme Response Code.
-
-    NON TESTE en conditions reelles - endpoint/format a verifier au premier run."""
+    """Récupère les réponses déjà présentes dans le formulaire de log mWater, indexées par
+    existing_log_response_key(), pour décider update vs create."""
     resp = requests.get(
         f"{MWATER_API_BASE}/responses",
         params={"client": client_id, "filter": json.dumps({"form": FORM_LOG_VERIFICATION})},
@@ -286,9 +289,9 @@ def fetch_existing_log_responses(client_id):
     raise_for_status_verbose(resp)
     by_key = {}
     for item in resp.json():
-        rc, _ = existing_log_response_key(item)
-        if rc:
-            by_key[existing_log_response_key(item)] = item["_id"]
+        key = existing_log_response_key(item)
+        if key[0]:  # Response Code présent
+            by_key[key] = item["_id"]
     return by_key
 
 
@@ -321,7 +324,7 @@ def inserer_log_dans_mwater(merged_rows, client_id):
     considerer cette partie fiable."""
     print("Insertion du log dans mWater (formulaire de log dedie)...")
     form_rev = fetch_form_rev(FORM_LOG_VERIFICATION, client_id)
-    existing_by_code = fetch_existing_log_responses(client_id)  # cle (Response Code, Water Point ID)
+    existing_by_code = fetch_existing_log_responses(client_id)  # cle : voir existing_log_response_key()
 
     created, updated, ignored = 0, 0, 0
     for row in merged_rows:
@@ -329,26 +332,9 @@ def inserer_log_dans_mwater(merged_rows, client_id):
         if payload is None:
             ignored += 1
             continue
-        # Cle de correspondance : Response Code + Water Point ID quand celui-ci est valide
-        # (evite la collision documentee plus haut). Quand il ne l'est pas (point d'eau
-        # 'Inconnu' de repli), il n'apporte aucune distinction utile de toute facon - on
-        # retombe alors sur Response Code seul, pour au moins mettre a jour au lieu de
-        # dupliquer a chaque run (risque residuel plus rare : deux anomalies sans ID valide
-        # partageant le meme Response Code).
-        wp_id = str(row.get("Water Point ID") or "").strip()
-        if is_valid_water_point_id(wp_id):
-            row_key = (row.get("Response Code"), wp_id)
-            response_id = existing_by_code.get(row_key)
-        else:
-            # Pas de Water Point ID valide -> Response Code seul ne suffit pas a
-            # distinguer les anomalies entre elles (plusieurs occurrences reelles et
-            # distinctes du meme signal peuvent le partager, vu le 02/09/2026 avec
-            # Lanja sur des cas comme "Etiennah MadAvance-DQQBXQ" : 22 detections
-            # hebdomadaires differentes, meme Response Code). Plutot que risquer de
-            # mettre a jour la mauvaise, on cree toujours une nouvelle entree pour
-            # ces cas - a ameliorer plus tard avec un critere fiable (ex. Premiere
-            # detection) une fois qu'un vrai usage (dashboard) en dependra.
-            response_id = None
+        row_key = (row.get("Response Code"), row.get("Dimension"), row.get("Sous-dimension"),
+                   row.get("Description"))
+        response_id = existing_by_code.get(row_key)
 
         # mWater n'a pas de mise a jour separee : ni PUT ni PATCH ne fonctionnent
         # (404/500, teste et documente dans mwater-access-manager/app/mwater_client.py).
