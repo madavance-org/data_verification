@@ -80,10 +80,9 @@ LOG_HEADERS = [
     "Dernière détection", "Date de résolution",
 ]
 
-# Déploiement "Maintenance préventive régulière" du formulaire registre : pas encore
-# renseigné (comme pour Réparation, à récupérer dans le portail mWater). Tant qu'il est
-# None, l'écriture dans le registre est sautée avec un message.
-DEPLOYMENT_LOG_VERIFICATION = None
+# Déploiement "Maintenance préventive régulière" du formulaire registre (lu dans la
+# définition du formulaire le 13/10/2026).
+DEPLOYMENT_LOG_VERIFICATION = "69d1692f3cbd424abdbb86c883b8fde4"
 # Même énumérateur que pour Appel maintenance préventive et Réparation après panne.
 ENUMERATEUR_LOG_VERIFICATION = "0336889caebc433d8ab0bba5dc919bed"
 
