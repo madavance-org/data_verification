@@ -81,6 +81,12 @@ def download_datagrid_raw_with_retry(datagrid_id, client_id, timeout=300, attemp
             time.sleep(wait_seconds)
 
 
+def download_datagrid_with_retry(datagrid_id, client_id, **kwargs):
+    """Version de download_datagrid avec nouvelles tentatives (voir download_datagrid_raw_with_retry)."""
+    text = download_datagrid_raw_with_retry(datagrid_id, client_id, **kwargs).decode("utf-8-sig")
+    return list(csv.DictReader(io.StringIO(text)))
+
+
 def fetch_raw_responses_by_code(client_id, form_id, codes, chunk_size=200):
     """Récupère les réponses brutes mWater (endpoint /responses, avant jointure du datagrid)
     pour une liste de 'Response Code'. Sert à distinguer un champ jamais répondu d'un champ
