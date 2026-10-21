@@ -49,6 +49,7 @@ from common.sharepoint import (
     resolve_share_link,
     send_html_email,
     upload_to_sharepoint,
+    folder_link_from_env,
 )
 from common.signal_code import SIGNAL_CODE_RE, propose_correction
 
@@ -535,7 +536,7 @@ def main():
     azure_tenant_id = os.environ["AZURE_TENANT_ID"].strip()
     azure_client_id = os.environ["AZURE_CLIENT_ID"].strip()
     azure_client_secret = os.environ["AZURE_CLIENT_SECRET"].strip()
-    sharepoint_folder_link = os.environ["SHAREPOINT_FOLDER_LINK"].strip()
+    sharepoint_folder_link = folder_link_from_env("SHAREPOINT_FOLDER_LINK_MAINTENANCE_REGULIERE")
     email_sender = os.environ["EMAIL_SENDER"].strip()
     email_recipients = os.environ["EMAIL_RECIPIENTS"].strip()
 

@@ -30,7 +30,7 @@ from datetime import datetime
 
 from common.dates import parse_dt
 from common.mwater_client import download_datagrid, mwater_login
-from common.sharepoint import download_existing_log, graph_token, resolve_share_link, upload_to_sharepoint
+from common.sharepoint import download_existing_log, folder_link_from_env, graph_token, resolve_share_link, upload_to_sharepoint
 from common.signal_code import SIGNAL_CODE_RE, propose_correction
 
 DATAGRID_MAINTENANCE = "2cfe0ba7ac264d119cfc8964b5f3cebc"
@@ -163,7 +163,7 @@ def main():
     azure_client_id = os.environ["AZURE_CLIENT_ID"].strip()
     azure_client_secret = os.environ["AZURE_CLIENT_SECRET"].strip()
 
-    sharepoint_folder_link = os.environ["SHAREPOINT_FOLDER_LINK"].strip()
+    sharepoint_folder_link = folder_link_from_env("SHAREPOINT_FOLDER_LINK_MAINTENANCE_REGULIERE")
 
     print("Authentification mWater...")
     client_id = mwater_login(mwater_username, mwater_password)

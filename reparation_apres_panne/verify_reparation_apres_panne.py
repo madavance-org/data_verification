@@ -48,7 +48,7 @@ from common.mwater_client import (
     find_water_point_entity_id,
     mwater_login,
 )
-from common.sharepoint import download_existing_log, graph_token, resolve_share_link, send_html_email, upload_to_sharepoint
+from common.sharepoint import download_existing_log, folder_link_from_env, graph_token, resolve_share_link, send_html_email, upload_to_sharepoint
 from common.signal_code import SIGNAL_CODE_RE, propose_correction
 
 # ---------------------------------------------------------------------------
@@ -767,7 +767,7 @@ def main():
     azure_client_id = os.environ["AZURE_CLIENT_ID"].strip()
     azure_client_secret = os.environ["AZURE_CLIENT_SECRET"].strip()
 
-    sharepoint_folder_link = os.environ["SHAREPOINT_FOLDER_LINK"].strip()
+    sharepoint_folder_link = folder_link_from_env("SHAREPOINT_FOLDER_LINK_REPARATION")
 
     email_sender = os.environ["EMAIL_SENDER"].strip()
     email_recipients = os.environ["EMAIL_RECIPIENTS"].strip()

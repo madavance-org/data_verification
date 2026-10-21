@@ -45,7 +45,7 @@ from common.mwater_client import (
     fetch_raw_responses_by_code,
     mwater_login,
 )
-from common.sharepoint import download_existing_log, graph_token, resolve_share_link, send_html_email, upload_to_sharepoint
+from common.sharepoint import download_existing_log, folder_link_from_env, graph_token, resolve_share_link, send_html_email, upload_to_sharepoint
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -1012,7 +1012,7 @@ def main():
     # .strip() défensif : un espace ou saut de ligne parasite collé dans un secret
     # GitHub Actions rend l'URL Graph mal formée et se traduit par un 400 "Invalid
     # request" plutôt qu'une erreur explicite.
-    sharepoint_folder_link = os.environ["SHAREPOINT_FOLDER_LINK"].strip()
+    sharepoint_folder_link = folder_link_from_env("SHAREPOINT_FOLDER_LINK_APPEL")
 
     email_sender = os.environ["EMAIL_SENDER"].strip()
     email_recipients = os.environ["EMAIL_RECIPIENTS"].strip()

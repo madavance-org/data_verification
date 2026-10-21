@@ -1,0 +1,34 @@
+name: Vérification de données — Clean Cooking Inscription
+
+on:
+  schedule:
+    # Chaque lundi à 09:00 UTC (après les vérifications Clean Water de 06:30 à 08:00, pour éviter
+    # des exports mWater concurrents — le datagrid Inscription fait ~90 000 lignes)
+    - cron: "0 9 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+
+      - name: Lancer la vérification
+        env:
+          MWATER_USERNAME: ${{ secrets.MWATER_USERNAME }}
+          MWATER_PASSWORD: ${{ secrets.MWATER_PASSWORD }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SHAREPOINT_FOLDER_LINK: ${{ secrets.SHAREPOINT_FOLDER_LINK }}
+          SHAREPOINT_FOLDER_LINK_INSCRIPTION: ${{ secrets.SHAREPOINT_FOLDER_LINK_INSCRIPTION }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+        run: python -m clean_cooking.verify_inscription

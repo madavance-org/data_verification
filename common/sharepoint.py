@@ -2,12 +2,20 @@
 
 import base64
 import io
+import os
 
 import requests
 
 from common.http_utils import raise_for_status_verbose
 
 GRAPH_API_BASE = "https://graph.microsoft.com/v1.0"
+
+
+def folder_link_from_env(specific_var):
+    """Lien de partage du dossier SharePoint cible pour une activité donnée.
+    Utilise le secret propre à l'activité (ex. SHAREPOINT_FOLDER_LINK_APPEL) s'il est renseigné ;
+    sinon retombe sur le secret commun SHAREPOINT_FOLDER_LINK (ancien emplacement unique)."""
+    return (os.environ.get(specific_var) or "").strip() or os.environ["SHAREPOINT_FOLDER_LINK"].strip()
 
 
 def graph_token(tenant_id, client_id, client_secret):

@@ -28,6 +28,7 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           SHAREPOINT_FOLDER_LINK: ${{ secrets.SHAREPOINT_FOLDER_LINK }}
+          SHAREPOINT_FOLDER_LINK_MAINTENANCE_REGULIERE: ${{ secrets.SHAREPOINT_FOLDER_LINK_MAINTENANCE_REGULIERE }}
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
         run: python -m maintenance_preventive.verify_maintenance_preventive_reguliere
