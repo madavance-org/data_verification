@@ -392,7 +392,8 @@ def main():
     client_id = mwater_login(os.environ["MWATER_USERNAME"].strip(), os.environ["MWATER_PASSWORD"].strip())
 
     print("Téléchargement du datagrid Inscription...")
-    rows = download_datagrid_with_retry(DATAGRID_INSCRIPTION, client_id)
+    # ~90 000 lignes : mWater répond parfois 524 (export trop long à générer) -> plus de tentatives
+    rows = download_datagrid_with_retry(DATAGRID_INSCRIPTION, client_id, attempts=8, wait_seconds=60)
     print(f"  {len(rows)} lignes")
 
     print("Résolution des ID ménage / villages vides (site supprimé ou jamais répondu)...")
