@@ -25,10 +25,22 @@ Azure/email n'est alors nécessaire).
 """
 
 import os
-import re
 from collections import Counter, defaultdict
-from datetime import datetime
 
+from clean_cooking.anomaly_log import (
+    DIMENSIONS,
+    STATUTS_CLOS,
+    Anomaly,
+    build_log_report,
+    build_submitted_on_lookup,
+    has_entity,
+    is_digits,
+    merge_with_log,
+    print_summary,
+    send_confirmation_email,
+    today,
+    val,
+)
 from common.dates import parse_dt
 from common.mwater_client import download_datagrid_with_retry, fetch_raw_responses_by_code, mwater_login
 from common.sharepoint import (
@@ -36,7 +48,6 @@ from common.sharepoint import (
     folder_link_from_env,
     graph_token,
     resolve_share_link,
-    send_html_email,
     upload_to_sharepoint,
 )
 
@@ -48,14 +59,6 @@ DATAGRID_INSCRIPTION = "ac3ae2ce1f7540f586ae1ab5673419a8"
 FORM_INSCRIPTION = "434df1bc4f144644b7ba52257ba30e2a"
 
 LOG_FILE_NAME = "data_verification_clean_cooking_inscription_log.xlsx"
-
-LOG_HEADERS = [
-    "Dimension", "Sous-dimension", "Response Code", "Household ID",
-    "Description", "Détails", "Statut", "Première détection",
-    "Dernière détection", "Date de résolution",
-]
-
-DIMENSIONS = ["Complétude", "Promptitude", "Validité", "Unicité", "Cohérence", "Fiabilité"]
 
 # Noms de colonnes du datagrid (orthographe exacte du portail, fautes comprises)
 C_STATUS = "Status"
@@ -93,31 +96,6 @@ MODES_VALIDES = {"Domestique", "Commerciale", "Institutionnelle"}
 PAIEMENTS_VALIDES = {"Non payé", "Payé totalement"}
 PAIEMENT_TOTAL = "Payé totalement"
 
-STATUTS_CLOS = ("Résolu", "Supprimé")
-
-
-def val(r, col):
-    return (r.get(col) or "").strip()
-
-
-def is_digits(value):
-    return re.fullmatch(r"[0-9]+", value) is not None
-
-
-# ---------------------------------------------------------------------------
-# Anomalie : structure commune
-# ---------------------------------------------------------------------------
-
-class Anomaly:
-    def __init__(self, dimension, subdimension, response_code, household_id, description, details=""):
-        self.dimension = dimension
-        self.subdimension = subdimension
-        self.response_code = response_code
-        self.household_id = household_id
-        self.description = description
-        self.details = details
-
-
 def new(dimension, subdimension, r, description, details=""):
     return Anomaly(dimension, subdimension, val(r, C_CODE), val(r, C_HOUSEHOLD), description, details)
 
@@ -125,13 +103,6 @@ def new(dimension, subdimension, r, description, details=""):
 # ---------------------------------------------------------------------------
 # Entités liées supprimées/inaccessibles (distinction Complétude)
 # ---------------------------------------------------------------------------
-
-def has_entity(raw_responses, entity_type):
-    """`raw_responses` : liste de réponses brutes partageant un même Response Code (voir
-    fetch_raw_responses_by_code)."""
-    return any(e.get("entityType") == entity_type
-               for resp in (raw_responses or []) for e in resp.get("entities", []))
-
 
 def resolve_missing_entities(rows, client_id):
     """Pour les lignes dont l'ID ménage ou le code village est vide dans le datagrid, regarde la
@@ -278,110 +249,6 @@ def check_fiabilite(rows):
 
 
 # ---------------------------------------------------------------------------
-# Log cumulatif : Nouveau / Toujours ouvert / Résolu / Supprimé
-# ---------------------------------------------------------------------------
-
-def anomaly_key(a):
-    return (a.dimension, a.subdimension, a.response_code, a.description, a.household_id)
-
-
-def build_submitted_on_lookup(rows):
-    lookup = {}
-    for r in rows:
-        dt = parse_dt(val(r, C_SUBMITTED))
-        if val(r, C_CODE) and dt:
-            lookup[val(r, C_CODE)] = dt.strftime("%d/%m/%Y")
-    return lookup
-
-
-def merge_with_log(current_anomalies, existing_rows, today_str, submitted_on_lookup=None,
-                   existing_response_codes=None):
-    """Même logique que carnet_de_bord/verify_carnet_de_bord.py : Nouveau, Toujours ouvert,
-    Résolu (date = Submitted On de la réponse), Supprimé (réponse mWater disparue)."""
-    submitted_on_lookup = submitted_on_lookup or {}
-    existing_response_codes = existing_response_codes or set()
-    existing_open, already_closed = {}, []
-    for row in existing_rows:
-        if row.get("Statut") in STATUTS_CLOS:
-            already_closed.append(row)
-        else:
-            key = (row.get("Dimension"), row.get("Sous-dimension"), row.get("Response Code"),
-                   row.get("Description"), row.get("Household ID"))
-            existing_open[key] = row
-
-    merged, seen_keys, new_count = [], set(), 0
-    for a in current_anomalies:
-        key = anomaly_key(a)
-        seen_keys.add(key)
-        existing = existing_open.get(key)
-        if not existing:
-            new_count += 1
-        merged.append({
-            "Dimension": a.dimension, "Sous-dimension": a.subdimension, "Response Code": a.response_code,
-            "Household ID": a.household_id, "Description": a.description, "Détails": a.details,
-            "Statut": "Toujours ouvert" if existing else "Nouveau",
-            "Première détection": existing.get("Première détection") if existing else today_str,
-            "Dernière détection": today_str, "Date de résolution": "",
-        })
-
-    resolved_count = deleted_count = 0
-    for key, row in existing_open.items():
-        if key in seen_keys:
-            continue
-        row = dict(row)
-        if row.get("Response Code") not in existing_response_codes:
-            row["Statut"], row["Date de résolution"] = "Supprimé", row.get("Première détection", "")
-            deleted_count += 1
-        else:
-            row["Statut"] = "Résolu"
-            row["Date de résolution"] = submitted_on_lookup.get(row.get("Response Code"), today_str)
-            resolved_count += 1
-        merged.append(row)
-
-    merged.extend(already_closed)
-    return merged, new_count, resolved_count, deleted_count
-
-
-def build_log_report(merged_rows, output_path):
-    from openpyxl import Workbook
-    from openpyxl.styles import Font
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Anomalies"
-    ws.append(LOG_HEADERS)
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
-    for row in merged_rows:
-        ws.append([row.get(h, "") for h in LOG_HEADERS])
-
-    open_rows = [r for r in merged_rows if r.get("Statut") not in STATUTS_CLOS]
-    summary = wb.create_sheet("Résumé")
-    summary.append(["Dimension", "Nombre d'anomalies ouvertes"])
-    for cell in summary[1]:
-        cell.font = Font(bold=True)
-    counts = Counter(r.get("Dimension") for r in open_rows)
-    for dimension in DIMENSIONS:
-        summary.append([dimension, counts.get(dimension, 0)])
-    summary.append(["Total ouvert", len(open_rows)])
-    wb.save(output_path)
-
-
-def send_confirmation_email(token, sender, recipients, file_name, open_count, new_count,
-                            resolved_count, deleted_count, counts_by_dimension):
-    lines = "".join(f"<li>{dim} : {n}</li>" for dim, n in counts_by_dimension.items())
-    body_html = (
-        "<p>Vérification de données \"Clean Cooking — Inscription\" exécutée.</p>"
-        f"<p>Anomalies actuellement ouvertes : <b>{open_count}</b> (dont {new_count} nouvelles) — "
-        f"{resolved_count} résolue(s) et {deleted_count} supprimée(s) (réponse mWater disparue) "
-        "depuis la dernière exécution.</p>"
-        f"<ul>{lines}</ul>"
-        f"<p>Log mis à jour sur SharePoint : <b>{file_name}</b></p>"
-    )
-    send_html_email(token, sender, recipients, f"Vérification de données — {file_name}", body_html)
-
-
-# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -409,9 +276,7 @@ def main():
     anomalies += check_coherence(rows)
     anomalies += check_fiabilite(rows)
     print(f"  {len(anomalies)} anomalies détectées")
-    detail = Counter((a.dimension, a.subdimension) for a in anomalies)
-    for (dimension, sub), n in sorted(detail.items(), key=lambda kv: (DIMENSIONS.index(kv[0][0]), -kv[1])):
-        print(f"    {dimension} / {sub} : {n}")
+    print_summary(anomalies)
 
     if dry_run:
         print("DRY_RUN : aucun accès SharePoint, aucun email, aucun log écrit.")
@@ -433,10 +298,10 @@ def main():
     existing_rows = download_existing_log(token, drive_id, folder_item_id, LOG_FILE_NAME)
     print(f"  {len(existing_rows)} lignes déjà présentes dans le log")
 
-    today_str = datetime.now().strftime("%d/%m/%Y")
+    today_str = today()
     merged_rows, new_count, resolved_count, deleted_count = merge_with_log(
         anomalies, existing_rows, today_str,
-        submitted_on_lookup=build_submitted_on_lookup(rows),
+        submitted_on_lookup=build_submitted_on_lookup(rows, C_CODE, C_SUBMITTED),
         existing_response_codes={val(r, C_CODE) for r in rows})
     open_rows = [r for r in merged_rows if r.get("Statut") not in STATUTS_CLOS]
     print(f"  {len(open_rows)} anomalies ouvertes ({new_count} nouvelles, {resolved_count} résolues, "
@@ -448,7 +313,8 @@ def main():
     upload_to_sharepoint(token, drive_id, folder_item_id, output_path, LOG_FILE_NAME)
 
     print("Envoi de l'email de confirmation...")
-    send_confirmation_email(token, email_sender, email_recipients, LOG_FILE_NAME, len(open_rows),
+    send_confirmation_email(token, email_sender, email_recipients, "Clean Cooking — Inscription",
+                            LOG_FILE_NAME, len(open_rows),
                             new_count, resolved_count, deleted_count,
                             Counter(r.get("Dimension") for r in open_rows))
     print("Terminé.")
