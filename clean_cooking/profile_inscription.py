@@ -8,7 +8,7 @@ import os
 import re
 from collections import Counter, defaultdict
 
-from common.mwater_client import download_datagrid_raw, mwater_login
+from common.mwater_client import download_datagrid_raw_with_retry, mwater_login
 
 DATAGRID_INSCRIPTION = "ac3ae2ce1f7540f586ae1ab5673419a8"
 
@@ -45,7 +45,7 @@ def masque(v):
 
 def main():
     client_id = mwater_login(os.environ["MWATER_USERNAME"].strip(), os.environ["MWATER_PASSWORD"].strip())
-    text = download_datagrid_raw(DATAGRID_INSCRIPTION, client_id, timeout=900).decode("utf-8-sig")
+    text = download_datagrid_raw_with_retry(DATAGRID_INSCRIPTION, client_id).decode("utf-8-sig")
     header = next(csv.reader(io.StringIO(text)))
     doublons = [h for h, n in Counter(header).items() if n > 1]
     rows = list(csv.DictReader(io.StringIO(text)))

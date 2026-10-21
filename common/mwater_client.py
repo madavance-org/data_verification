@@ -10,6 +10,8 @@ séparément.
 import csv
 import io
 import json
+import sys
+import time
 
 import requests
 
@@ -54,6 +56,29 @@ def download_datagrid_raw(datagrid_id, client_id, timeout=120):
     )
     raise_for_status_verbose(resp)
     return resp.content
+
+
+def download_datagrid_raw_with_retry(datagrid_id, client_id, timeout=300, attempts=5, wait_seconds=30):
+    """Comme download_datagrid_raw, mais réessaie quand mWater ne parvient pas à générer l'export
+    à temps (HTTP 502/503/504/524 ou délai dépassé) : cas des gros datagrids (ex. Clean Cooking,
+    ~90 000 lignes), où la génération côté serveur peut dépasser la limite du proxy (~100 s)."""
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = requests.get(
+                f"{MWATER_API_BASE}/datagrids/{datagrid_id}/download",
+                params={"client": client_id, "share": "", "extraFilters": "[]", "format": "csv"},
+                timeout=timeout,
+            )
+            if resp.status_code in (502, 503, 504, 524):
+                raise requests.HTTPError(f"HTTP {resp.status_code}")
+            raise_for_status_verbose(resp)
+            return resp.content
+        except (requests.ReadTimeout, requests.ConnectionError, requests.HTTPError) as exc:
+            if attempt == attempts:
+                raise
+            print(f"  datagrid {datagrid_id} : tentative {attempt}/{attempts} échouée ({exc}), "
+                  f"nouvel essai dans {wait_seconds}s", file=sys.stderr)
+            time.sleep(wait_seconds)
 
 
 def fetch_raw_responses_by_code(client_id, form_id, codes, chunk_size=200):
