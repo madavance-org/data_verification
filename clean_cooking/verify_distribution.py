@@ -138,11 +138,20 @@ def check_completude(rows, household_entities):
             out.append(new("Complétude", "Modèle de foyer manquant", r, "Modèle de foyer reçu non renseigné"))
         else:
             type_foyer = type_du_modele(r) or val(r, C_TYPE)
-            for col in QR_ATTENDUS.get(type_foyer, []):
+            attendus = QR_ATTENDUS.get(type_foyer, [])
+            for col in attendus:
                 if not val(r, col):
                     out.append(new("Complétude", "QR code manquant", r,
                                    f"{col} manquant pour un foyer {type_foyer}",
-                                   f"QR codes attendus : {len(QR_ATTENDUS[type_foyer])}"))
+                                   f"QR codes attendus : {len(attendus)}"))
+            # Le guide exige un nombre de QR codes égal à la quantité attendue : un QR en trop
+            # (ex. QR Code 1 renseigné pour un Type 3) est aussi un écart.
+            if attendus:
+                for col in C_QR:
+                    if col not in attendus and val(r, col):
+                        out.append(new("Complétude", "QR code en trop", r,
+                                       f"{col} renseigné alors qu'il n'est pas attendu pour un foyer {type_foyer}",
+                                       f"QR codes attendus : {', '.join(attendus)}"))
 
         # Montant payé et foyers retournés : toujours obligatoires (0 accepté)
         if not val(r, C_MONTANT):

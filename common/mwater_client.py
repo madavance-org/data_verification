@@ -73,7 +73,9 @@ def download_datagrid_raw_with_retry(datagrid_id, client_id, timeout=300, attemp
                 raise requests.HTTPError(f"HTTP {resp.status_code}")
             raise_for_status_verbose(resp)
             return resp.content
-        except (requests.ReadTimeout, requests.ConnectionError, requests.HTTPError) as exc:
+        except (requests.ReadTimeout, requests.ConnectionError, requests.HTTPError,
+                requests.exceptions.ChunkedEncodingError) as exc:
+            # ChunkedEncodingError : connexion coupée en cours de téléchargement (IncompleteRead)
             if attempt == attempts:
                 raise
             print(f"  datagrid {datagrid_id} : tentative {attempt}/{attempts} échouée ({exc}), "
@@ -103,16 +105,28 @@ def fetch_raw_responses_by_code(client_id, form_id, codes, chunk_size=200):
     codes = [c for c in codes if c]
     for i in range(0, len(codes), chunk_size):
         chunk = codes[i:i + chunk_size]
-        resp = requests.get(
-            f"{MWATER_API_BASE}/responses",
-            params={
-                "client": client_id,
-                "filter": json.dumps({"form": form_id, "code": {"$in": chunk}}),
-            },
-            timeout=60,
-        )
-        raise_for_status_verbose(resp)
-        for item in resp.json():
+        for attempt in range(1, 6):
+            try:
+                resp = requests.get(
+                    f"{MWATER_API_BASE}/responses",
+                    params={
+                        "client": client_id,
+                        "filter": json.dumps({"form": form_id, "code": {"$in": chunk}}),
+                    },
+                    timeout=60,
+                )
+                raise_for_status_verbose(resp)
+                items = resp.json()
+                break
+            except (requests.ReadTimeout, requests.ConnectionError,
+                    requests.exceptions.ChunkedEncodingError) as exc:
+                # Coupure réseau passagère (ex. IncompleteRead) : on réessaie ce lot
+                if attempt == 5:
+                    raise
+                print(f"  /responses : tentative {attempt}/5 échouée ({exc}), nouvel essai dans 10s",
+                      file=sys.stderr)
+                time.sleep(10)
+        for item in items:
             results.setdefault(item.get("code"), []).append(item)
     return results
 

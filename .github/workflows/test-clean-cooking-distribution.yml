@@ -20,13 +20,6 @@ jobs:
       - name: Installer les dépendances
         run: pip install -r requirements.txt
 
-      - name: Profil du datagrid Distribution
-        continue-on-error: true
-        env:
-          MWATER_USERNAME: ${{ secrets.MWATER_USERNAME }}
-          MWATER_PASSWORD: ${{ secrets.MWATER_PASSWORD }}
-        run: python -m clean_cooking.profile_distribution
-
       - name: Inscription (DRY_RUN, contrôle de la refactorisation)
         continue-on-error: true
         env:
