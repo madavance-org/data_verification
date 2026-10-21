@@ -126,10 +126,11 @@ def new(dimension, subdimension, r, description, details=""):
 # Entités liées supprimées/inaccessibles (distinction Complétude)
 # ---------------------------------------------------------------------------
 
-def has_entity(raw_response, entity_type):
-    if not raw_response:
-        return False
-    return any(e.get("entityType") == entity_type for e in raw_response.get("entities", []))
+def has_entity(raw_responses, entity_type):
+    """`raw_responses` : liste de réponses brutes partageant un même Response Code (voir
+    fetch_raw_responses_by_code)."""
+    return any(e.get("entityType") == entity_type
+               for resp in (raw_responses or []) for e in resp.get("entities", []))
 
 
 def resolve_missing_entities(rows, client_id):
