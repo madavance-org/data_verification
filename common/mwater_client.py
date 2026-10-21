@@ -31,12 +31,12 @@ def mwater_login(username, password):
     return client_id
 
 
-def download_datagrid(datagrid_id, client_id):
+def download_datagrid(datagrid_id, client_id, timeout=120):
     """Télécharge un datagrid mWater et le retourne comme liste de dict (une par ligne)."""
     resp = requests.get(
         f"{MWATER_API_BASE}/datagrids/{datagrid_id}/download",
         params={"client": client_id, "share": "", "extraFilters": "[]", "format": "csv"},
-        timeout=120,
+        timeout=timeout,
     )
     raise_for_status_verbose(resp)
     # utf-8-sig pour gérer le BOM renvoyé par mWater
@@ -45,12 +45,12 @@ def download_datagrid(datagrid_id, client_id):
     return list(reader)
 
 
-def download_datagrid_raw(datagrid_id, client_id):
+def download_datagrid_raw(datagrid_id, client_id, timeout=120):
     """Télécharge le datagrid tel quel (bytes), sans parsing ni transformation."""
     resp = requests.get(
         f"{MWATER_API_BASE}/datagrids/{datagrid_id}/download",
         params={"client": client_id, "share": "", "extraFilters": "[]", "format": "csv"},
-        timeout=120,
+        timeout=timeout,
     )
     raise_for_status_verbose(resp)
     return resp.content

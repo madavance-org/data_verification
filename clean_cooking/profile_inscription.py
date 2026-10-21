@@ -45,7 +45,7 @@ def masque(v):
 
 def main():
     client_id = mwater_login(os.environ["MWATER_USERNAME"].strip(), os.environ["MWATER_PASSWORD"].strip())
-    text = download_datagrid_raw(DATAGRID_INSCRIPTION, client_id).decode("utf-8-sig")
+    text = download_datagrid_raw(DATAGRID_INSCRIPTION, client_id, timeout=900).decode("utf-8-sig")
     header = next(csv.reader(io.StringIO(text)))
     doublons = [h for h, n in Counter(header).items() if n > 1]
     rows = list(csv.DictReader(io.StringIO(text)))

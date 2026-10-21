@@ -23,5 +23,4 @@ jobs:
           MWATER_USERNAME: ${{ secrets.MWATER_USERNAME }}
           MWATER_PASSWORD: ${{ secrets.MWATER_PASSWORD }}
         run: |
-          python -m clean_cooking.inspect_datagrids > /dev/null
           python -m clean_cooking.profile_inscription
