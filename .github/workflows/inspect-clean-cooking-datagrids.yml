@@ -1,6 +1,8 @@
 name: Inspection ponctuelle — Datagrids Clean Cooking
 
 on:
+  push:
+    branches: [clean-cooking-inspection]
   workflow_dispatch: {}
 
 jobs:
