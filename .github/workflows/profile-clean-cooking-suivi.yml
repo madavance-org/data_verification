@@ -1,0 +1,26 @@
+name: Profil temporaire — Clean Cooking Suivi post distribution (branche)
+
+# Workflow de développement : lancé au push de la branche clean-cooking-suivi. Lecture seule,
+# n'affiche que des comptages et des masques. À supprimer avant la fusion dans main.
+on:
+  push:
+    branches: [clean-cooking-suivi]
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+
+      - name: Profil du datagrid Suivi post distribution
+        env:
+          MWATER_USERNAME: ${{ secrets.MWATER_USERNAME }}
+          MWATER_PASSWORD: ${{ secrets.MWATER_PASSWORD }}
+        run: python -m clean_cooking.profile_suivi
