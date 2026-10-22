@@ -22,7 +22,7 @@ from common.sharepoint import GRAPH_API_BASE, graph_token
 IMAGE_URL = "https://api.mwater.co/v3/images/{}"
 IMAGE_RE = re.compile(r"https://api\.mwater\.co/v3/images/([0-9a-f]{32})")
 
-SIMPLE_UPLOAD_MAX = 3_900_000        # en dessous : envoi simple (limite Graph : 4 Mo)
+SIMPLE_UPLOAD_MAX = 100_000_000      # en dessous : envoi simple (Graph accepte jusqu'à 250 Mo) ; au-delà : session d'envoi
 CHUNK_SIZE = 320 * 1024 * 30         # ~9,4 Mo, multiple de 320 Kio comme l'exige Graph
 TRANSIENT_STATUS = {429, 500, 502, 503, 504}
 TOKEN_LIFETIME_SECONDS = 40 * 60     # renouvellement du jeton bien avant son expiration (~60 min)

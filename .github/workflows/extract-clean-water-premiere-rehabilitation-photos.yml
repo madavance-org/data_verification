@@ -1,15 +1,18 @@
-name: Essai temporaire — Photos Première réhabilitation (branche)
+name: Archivage des photos — Clean Water Première réhabilitation
 
-# Workflow de développement : lancé au push de la branche photos-premiere-rehabilitation.
-# ESSAI RÉEL limité à 20 photos (MAX_PHOTOS). Branche et fichier à supprimer après l'essai.
 on:
-  push:
-    branches: [photos-premiere-rehabilitation]
+  schedule:
+    # Une fois par mois : le 5 à 03:00 UTC. Le script est incrémental (registre photos_archivees.json
+    # dans le dossier photos de SharePoint) : il n'archive que les nouvelles photos.
+    - cron: "0 3 5 * *"
+  # Lancement manuel : utile pour terminer le premier archivage complet (~22 000 photos), qui peut
+  # demander plusieurs passages de 5 h, chacun reprenant là où le précédent s'est arrêté.
+  workflow_dispatch: {}
 
 jobs:
-  essai:
+  archive:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
 
@@ -20,10 +23,9 @@ jobs:
       - name: Installer les dépendances
         run: pip install -r requirements.txt
 
-      - name: Archivage de 20 photos (essai réel)
+      - name: Archiver les photos de la Première réhabilitation
         env:
-          MAX_PHOTOS: "20"
-          MAX_RUNTIME_MINUTES: "20"
+          MAX_RUNTIME_MINUTES: "320"
           MWATER_USERNAME: ${{ secrets.MWATER_USERNAME }}
           MWATER_PASSWORD: ${{ secrets.MWATER_PASSWORD }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
