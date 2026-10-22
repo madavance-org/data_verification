@@ -13,6 +13,7 @@ import json
 import re
 import threading
 import time
+import unicodedata
 
 import requests
 
@@ -30,6 +31,12 @@ MAX_RETRIES = 6
 REGISTRY_NAME = "photos_archivees.json"
 
 _INVALID = re.compile(r'[\\/:*?"<>|#%~&{}\x00-\x1f]')
+
+
+def cle_nom(texte):
+    """Clé de comparaison d'un nom de dossier ou de fichier : SharePoint ignore la casse et ne distingue
+    pas les accents composés des accents décomposés ("Fort-Dauphin" == "Fort-dauphin")."""
+    return unicodedata.normalize("NFC", str(texte)).casefold().strip()
 
 
 def image_ids(cell):
@@ -136,7 +143,7 @@ class PhotoArchive:
         with self._verrou:
             courant = ()
             for nom in parties:
-                suivant = courant + (nom,)
+                suivant = courant + (cle_nom(nom),)
                 if suivant not in self._dossiers:
                     self._dossiers[suivant] = self._trouver_ou_creer(self._dossiers[courant], nom)
                 courant = suivant
@@ -150,7 +157,7 @@ class PhotoArchive:
             return resp.json()["id"]
         if resp.status_code == 409:  # existe déjà
             for enfant in self._enfants(parent_id):
-                if enfant.get("name") == nom and enfant.get("folder") is not None:
+                if cle_nom(enfant.get("name") or "") == cle_nom(nom) and enfant.get("folder") is not None:
                     return enfant["id"]
         raise_for_status_verbose(resp)
         raise RuntimeError(f"dossier '{nom}' introuvable après création")

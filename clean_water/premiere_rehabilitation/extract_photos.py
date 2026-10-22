@@ -39,7 +39,7 @@ from collections import Counter, namedtuple
 from concurrent.futures import ThreadPoolExecutor
 
 from common.mwater_client import download_datagrid_raw_with_retry, fetch_entities_by_code, mwater_login
-from common.photos import GraphClient, PhotoArchive, clean_part, download_image, image_ids
+from common.photos import GraphClient, PhotoArchive, clean_part, cle_nom, download_image, image_ids
 from common.sharepoint import graph_token, resolve_share_link
 
 DATAGRID_REHAB = "0638d32971704164b9ac22d549d4818e"
@@ -107,7 +107,7 @@ def construire_taches(header, lignes, entites, registre):
     colonnes_photo = [i for i in range(len(header)) if any(image_ids(valeur(l, i)) for l in retenues)]
 
     retenues.sort(key=lambda l: ((valeur(l, i_date) or valeur(l, i_sub))[:10], valeur(l, i_code)))
-    utilises = set(registre.values())
+    utilises = {cle_nom(chemin) for chemin in registre.values()}
     taches, stats = [], Counter()
     for l in retenues:
         wp, code_reponse = valeur(l, i_wp), valeur(l, i_code)
@@ -131,9 +131,9 @@ def construire_taches(header, lignes, entites, registre):
                 prefixe = "_".join([PREFIXE_FICHIER, clean_part(wp or code_reponse, 30, "-"), custom_id, champ, date])
                 dossier = "/".join(parties)
                 n = 1
-                while f"{dossier}/{prefixe}_{n}.jpg" in utilises:
+                while cle_nom(f"{dossier}/{prefixe}_{n}.jpg") in utilises:
                     n += 1
-                utilises.add(f"{dossier}/{prefixe}_{n}.jpg")
+                utilises.add(cle_nom(f"{dossier}/{prefixe}_{n}.jpg"))
                 taches.append(Tache(image_id, parties, f"{prefixe}_{n}.jpg", champ))
     return taches, stats, len(retenues), len(colonnes_photo)
 
