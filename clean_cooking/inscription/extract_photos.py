@@ -36,7 +36,7 @@ import time
 from collections import Counter, defaultdict, namedtuple
 
 from common.mwater_client import download_datagrid_raw_with_retry, fetch_entities_by_code, mwater_login
-from common.photos import GraphClient, PhotoArchive, archiver_taches, clean_part, image_ids
+from common.photos import GraphClient, PhotoArchive, archiver_taches, clean_part, cle_nom, image_ids
 from common.sharepoint import graph_token, resolve_share_link
 
 DATAGRID_INSCRIPTION = "ac3ae2ce1f7540f586ae1ab5673419a8"
@@ -82,19 +82,21 @@ def construire_taches(lignes, noms_villages, registre):
     retenues = [r for r in lignes if val(r, C_STATUS) == "Final"]
     retenues.sort(key=lambda r: (val(r, C_DRAFTED)[:10], val(r, C_CODE)))
 
-    # Homonymes : même nom dans un même village (même localisation) avec des ID de ménage différents
+    def cle_dossier(r):
+        village = noms_villages.get(val(r, C_VILLAGE)) or ""
+        return (tuple(cle_nom(val(r, c)) for c in C_ADRESSE), cle_nom(village), cle_nom(clean_part(val(r, C_NOM), 60)))
+
+    # Homonymes : même nom dans un même village (même chemin SharePoint, casse ignorée) avec des ID de ménage différents
     ids_par_nom = defaultdict(set)
     for r in retenues:
-        cle = (tuple(val(r, c) for c in C_ADRESSE), val(r, C_VILLAGE), val(r, C_NOM).lower())
-        ids_par_nom[cle].add(val(r, C_MENAGE))
+        ids_par_nom[cle_dossier(r)].add(val(r, C_MENAGE))
 
-    utilises = set(registre.values())
+    utilises = {cle_nom(chemin) for chemin in registre.values()}
     taches, stats = [], Counter()
     for r in retenues:
         menage, code_reponse = val(r, C_MENAGE), val(r, C_CODE)
         nom = val(r, C_NOM)
-        cle = (tuple(val(r, c) for c in C_ADRESSE), val(r, C_VILLAGE), nom.lower())
-        homonyme = len(ids_par_nom[cle]) > 1 and bool(menage)
+        homonyme = len(ids_par_nom[cle_dossier(r)]) > 1 and bool(menage)
         dossier_menage = clean_part(nom or code_reponse, 60)
         fichier_menage = clean_part(nom or code_reponse, 40, "-")
         if homonyme:
@@ -121,9 +123,9 @@ def construire_taches(lignes, noms_villages, registre):
                 prefixe = "_".join([PREFIXE_FICHIER, fichier_menage, libelle, date])
                 dossier = "/".join(parties)
                 n = 1
-                while f"{dossier}/{prefixe}_{n}.jpg" in utilises:
+                while cle_nom(f"{dossier}/{prefixe}_{n}.jpg") in utilises:
                     n += 1
-                utilises.add(f"{dossier}/{prefixe}_{n}.jpg")
+                utilises.add(cle_nom(f"{dossier}/{prefixe}_{n}.jpg"))
                 taches.append(Tache(image_id, parties, f"{prefixe}_{n}.jpg", libelle))
     return taches, stats, len(retenues)
 
