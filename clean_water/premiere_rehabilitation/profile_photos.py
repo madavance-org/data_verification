@@ -25,6 +25,16 @@ def main():
         positions[h].append(i + 1)
     print("En-têtes en double :", {h: p for h, p in positions.items() if len(p) > 1})
 
+    # Colonnes utiles au classement des photos : point d'eau, ID, localisation administrative
+    mots = ("région", "region", "district", "commune", "fokontany", "village", "custom", "unique id",
+            "point d'eau", "localité", "zone", "date de")
+    print("\nColonnes candidates (n° | nom | lignes remplies, toutes lignes) :")
+    for i, h in enumerate(header):
+        if any(m in h.lower() for m in mots) and "(asked)" not in h.lower() and "(time answered)" not in h.lower() \
+                and "(location answered" not in h.lower():
+            remplies = sum(1 for r in rows if i < len(r) and r[i].strip())
+            print(f"  {i + 1:>3} | {h[:90]} | {remplies}")
+
     i_type = header.index("Type de travaux") if "Type de travaux" in header else None
     i_status = header.index("Status")
     print("Types de travaux x Status :")
