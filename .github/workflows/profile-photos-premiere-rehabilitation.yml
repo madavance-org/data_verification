@@ -1,0 +1,27 @@
+name: Comptage temporaire — Photos Première réhabilitation (branche)
+
+# Workflow de développement : lancé au push de la branche photos-premiere-rehabilitation.
+# Lecture seule (comptages uniquement). Branche et fichiers à supprimer après lecture du résultat.
+on:
+  push:
+    branches: [photos-premiere-rehabilitation]
+
+jobs:
+  count:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+
+      - name: Compter les photos du datagrid Réhabilitation
+        env:
+          MWATER_USERNAME: ${{ secrets.MWATER_USERNAME }}
+          MWATER_PASSWORD: ${{ secrets.MWATER_PASSWORD }}
+        run: python -m clean_water.premiere_rehabilitation.profile_photos
