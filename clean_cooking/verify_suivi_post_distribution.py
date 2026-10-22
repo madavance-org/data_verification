@@ -500,6 +500,9 @@ def main():
     print_summary(anomalies)
 
     if dry_run:
+        print("  Motifs les plus fréquents :")
+        for (dimension, description), n in Counter((a.dimension, a.description) for a in anomalies).most_common(25):
+            print(f"    {n:>4} | {dimension} | {description}")
         print("DRY_RUN : aucun accès SharePoint, aucun email, aucun log écrit.")
         return
 
