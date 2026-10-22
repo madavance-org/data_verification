@@ -20,8 +20,9 @@ jobs:
       - name: Installer les dépendances
         run: pip install -r requirements.txt
 
-      - name: Compter les photos du datagrid Réhabilitation
+      - name: Simulation de l'archivage des photos (DRY_RUN)
         env:
+          DRY_RUN: "true"
           MWATER_USERNAME: ${{ secrets.MWATER_USERNAME }}
           MWATER_PASSWORD: ${{ secrets.MWATER_PASSWORD }}
-        run: python -m clean_water.premiere_rehabilitation.profile_photos
+        run: python -m clean_water.premiere_rehabilitation.extract_photos
