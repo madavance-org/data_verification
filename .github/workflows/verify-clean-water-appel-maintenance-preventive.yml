@@ -3,7 +3,7 @@ name: Vérification de données — Appel maintenance préventive
 on:
   schedule:
     # Tous les jours à 06:30 UTC (30 min après le backup mWater, pour éviter un export concurrent)
-    - cron: "30 6 * * *"
+    - cron: "30 6 * * 1"
   workflow_dispatch: {}
 
 jobs:
