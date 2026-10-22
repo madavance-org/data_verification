@@ -1,13 +1,13 @@
-name: Profil temporaire — Clean Cooking Atelier de réparation (branche)
+name: Test temporaire — Clean Cooking Atelier de réparation (branche)
 
-# Workflow de développement : lancé au push de la branche clean-cooking-atelier. Lecture seule,
-# n'affiche que des comptages et des masques. À supprimer avant la fusion dans main.
+# Workflow de développement : lancé au push de la branche clean-cooking-atelier, en mode DRY_RUN
+# (aucun accès SharePoint, aucun email). À supprimer avant la fusion dans main.
 on:
   push:
     branches: [clean-cooking-atelier]
 
 jobs:
-  profile:
+  test:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -20,8 +20,9 @@ jobs:
       - name: Installer les dépendances
         run: pip install -r requirements.txt
 
-      - name: Profil du datagrid Atelier de réparation
+      - name: Atelier de réparation (DRY_RUN)
         env:
+          DRY_RUN: "true"
           MWATER_USERNAME: ${{ secrets.MWATER_USERNAME }}
           MWATER_PASSWORD: ${{ secrets.MWATER_PASSWORD }}
-        run: python -m clean_cooking.profile_atelier
+        run: python -m clean_cooking.verify_atelier_reparation
