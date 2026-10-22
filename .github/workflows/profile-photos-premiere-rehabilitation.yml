@@ -1,13 +1,13 @@
-name: Comptage temporaire — Photos Première réhabilitation (branche)
+name: Essai temporaire — Photos Première réhabilitation (branche)
 
 # Workflow de développement : lancé au push de la branche photos-premiere-rehabilitation.
-# Lecture seule (comptages uniquement). Branche et fichiers à supprimer après lecture du résultat.
+# ESSAI RÉEL limité à 20 photos (MAX_PHOTOS). Branche et fichier à supprimer après l'essai.
 on:
   push:
     branches: [photos-premiere-rehabilitation]
 
 jobs:
-  count:
+  essai:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -20,9 +20,14 @@ jobs:
       - name: Installer les dépendances
         run: pip install -r requirements.txt
 
-      - name: Simulation de l'archivage des photos (DRY_RUN)
+      - name: Archivage de 20 photos (essai réel)
         env:
-          DRY_RUN: "true"
+          MAX_PHOTOS: "20"
+          MAX_RUNTIME_MINUTES: "20"
           MWATER_USERNAME: ${{ secrets.MWATER_USERNAME }}
           MWATER_PASSWORD: ${{ secrets.MWATER_PASSWORD }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SHAREPOINT_FOLDER_LINK_PREMIERE_REHABILITATION_PHOTOS: ${{ secrets.SHAREPOINT_FOLDER_LINK_PREMIERE_REHABILITATION_PHOTOS }}
         run: python -m clean_water.premiere_rehabilitation.extract_photos

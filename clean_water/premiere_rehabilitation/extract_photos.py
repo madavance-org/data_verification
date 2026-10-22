@@ -55,6 +55,25 @@ C_SUBMITTED = "Submitted On"
 NIVEAUX_GRILLE = ["Région", "District", "Commune", "Fokontany", "Village"]
 NIVEAUX_FICHE = ["admin_div1", "admin_div2", "admin_div3", "admin_div4", "admin_div5"]
 
+# Libellés courts des champs photo dans les noms de fichiers : (morceau du titre du champ, libellé)
+LIBELLES_CHAMPS = [
+    ("problème", "avant-travaux"),
+    ("activité de réhabilitation", "pendant-travaux"),
+    ("travaux réalisés", "apres-travaux"),
+    ("non fonctionnement", "preuve-panne"),
+    ("représentant local", "representant-local"),
+    ("eau coulant", "eau-pompe-reparee"),
+]
+
+
+def libelle_champ(titre):
+    minuscules = titre.lower()
+    for morceau, libelle in LIBELLES_CHAMPS:
+        if morceau in minuscules:
+            return libelle
+    return clean_part(titre, 45, "-")  # champ inconnu : titre nettoyé
+
+
 Tache = namedtuple("Tache", "image_id parties nom_fichier champ")
 
 
@@ -104,7 +123,7 @@ def construire_taches(header, lignes, entites, registre):
             stats["non classées"] += 1
         custom_id = clean_part(fiche.get("alt_id") or "sans-id", 30, "-")
         for i in colonnes_photo:
-            champ = clean_part(header[i], 45, "-")
+            champ = libelle_champ(header[i])
             for image_id in image_ids(valeur(l, i)):
                 if image_id in registre:
                     stats["déjà archivées"] += 1
