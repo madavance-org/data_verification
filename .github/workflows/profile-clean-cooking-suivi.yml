@@ -1,14 +1,15 @@
-name: Profil temporaire — Clean Cooking Suivi post distribution (branche)
+name: Test temporaire — Clean Cooking Suivi post distribution (branche)
 
-# Workflow de développement : lancé au push de la branche clean-cooking-suivi. Lecture seule,
-# n'affiche que des comptages et des masques. À supprimer avant la fusion dans main.
+# Workflow de développement : lancé au push de la branche clean-cooking-suivi, en mode DRY_RUN
+# (aucun accès SharePoint, aucun email). À supprimer avant la fusion dans main.
 on:
   push:
     branches: [clean-cooking-suivi]
 
 jobs:
-  profile:
+  test:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -19,8 +20,9 @@ jobs:
       - name: Installer les dépendances
         run: pip install -r requirements.txt
 
-      - name: Profil du datagrid Suivi post distribution
+      - name: Suivi post distribution (DRY_RUN)
         env:
+          DRY_RUN: "true"
           MWATER_USERNAME: ${{ secrets.MWATER_USERNAME }}
           MWATER_PASSWORD: ${{ secrets.MWATER_PASSWORD }}
-        run: python -m clean_cooking.profile_suivi
+        run: python -m clean_cooking.verify_suivi_post_distribution
