@@ -209,13 +209,13 @@ def check_promptitude(rows):
             for (l1, d1), (l2, d2) in zip(dates, dates[1:]):
                 if d2 < d1:
                     out.append(new("Promptitude", "Ordre des dates", r,
-                                   f"Date de {l2} antérieure à la date de {l1} (stove {n})",
+                                   f"Date « {l2} » antérieure à la date « {l1} » (stove {n})",
                                    f"{l1} : {d1} / {l2} : {d2}"))
             if soumission:
                 for libelle, d in dates:
                     if d > soumission:
                         out.append(new("Promptitude", "Date postérieure à la soumission", r,
-                                       f"Date de {libelle} postérieure à Submitted On (stove {n})",
+                                       f"Date « {libelle} » postérieure à Submitted On (stove {n})",
                                        f"{libelle} : {d} / Submitted On : {soumission}"))
     return out
 
