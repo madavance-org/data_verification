@@ -197,3 +197,36 @@ class PhotoArchive:
     def save_registry(self, registre):
         contenu = json.dumps({"photos": registre}, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         self.upload(self.root_id, REGISTRY_NAME, contenu)
+
+
+def archiver_taches(archive, registre, taches, workers, max_minutes, debut):
+    """Télécharge puis dépose les photos par lots (en parallèle), en enregistrant le registre après
+    chaque lot. S'arrête proprement après `max_minutes`. Une photo en échec n'est pas inscrite au
+    registre : elle sera retentée au passage suivant. Retourne (réussies, échecs)."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    reussies = echecs = 0
+    taille = workers * 25
+
+    def traiter(tache):
+        contenu = download_image(tache.image_id)
+        archive.upload(archive.folder(tache.parties), tache.nom_fichier, contenu)
+
+    for debut_lot in range(0, len(taches), taille):
+        if (time.time() - debut) / 60 > max_minutes:
+            print(f"Durée maximale atteinte ({max_minutes:.0f} min) : arrêt propre, reprise au prochain passage.")
+            break
+        lot = taches[debut_lot:debut_lot + taille]
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [(t, pool.submit(traiter, t)) for t in lot]
+            for t, futur in futures:
+                try:
+                    futur.result()
+                    registre[t.image_id] = "/".join(t.parties) + "/" + t.nom_fichier
+                    reussies += 1
+                except Exception as exc:
+                    echecs += 1
+                    print(f"  échec photo {t.image_id[:8]}… : {type(exc).__name__}")
+        archive.save_registry(registre)
+        print(f"  {reussies} photos archivées, {echecs} échecs ({(time.time() - debut) / 60:.0f} min)")
+    return reussies, echecs
