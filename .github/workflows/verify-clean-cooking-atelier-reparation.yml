@@ -32,4 +32,4 @@ jobs:
           SHAREPOINT_FOLDER_LINK_ATELIER_REPARATION: ${{ secrets.SHAREPOINT_FOLDER_LINK_ATELIER_REPARATION }}
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
-        run: python -m clean_cooking.verify_atelier_reparation
+        run: python -m clean_cooking.atelier_reparation.verify_atelier_reparation

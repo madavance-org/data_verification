@@ -1,6 +1,6 @@
 """Résolution des fusions de points d'eau mWater (déduplication).
 
-Extrait de premiere_rehabilitation/find_merged_water_points.py pour être réutilisable par
+Extrait de clean_water/premiere_rehabilitation/find_merged_water_points.py pour être réutilisable par
 n'importe quel script d'activité qui référence un Water Point ID : un même point d'eau peut
 avoir été fusionné (dédupliqué) dans une autre entité après la saisie d'une réponse, ce qui le
 fait ressortir vide dans le datagrid sans que ce soit une vraie anomalie de Complétude.

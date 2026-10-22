@@ -1,10 +1,14 @@
-name: Vérification ponctuelle — Format Signal code (Maintenance préventive)
+name: Vérification de données — Réparation après panne
 
 on:
+  schedule:
+    # Chaque lundi à 07:30 UTC (décalé de 30 min par rapport à verify-carnet-de-bord.yml,
+    # pour éviter un export mWater concurrent)
+    - cron: "30 7 * * 1"
   workflow_dispatch: {}
 
 jobs:
-  check:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,7 +20,7 @@ jobs:
       - name: Installer les dépendances
         run: pip install -r requirements.txt
 
-      - name: Vérifier le format des Signal code
+      - name: Lancer la vérification
         env:
           MWATER_USERNAME: ${{ secrets.MWATER_USERNAME }}
           MWATER_PASSWORD: ${{ secrets.MWATER_PASSWORD }}
@@ -24,5 +28,7 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           SHAREPOINT_FOLDER_LINK: ${{ secrets.SHAREPOINT_FOLDER_LINK }}
-          SHAREPOINT_FOLDER_LINK_MAINTENANCE_REGULIERE: ${{ secrets.SHAREPOINT_FOLDER_LINK_MAINTENANCE_REGULIERE }}
-        run: python -m maintenance_preventive.check_signal_code_format
+          SHAREPOINT_FOLDER_LINK_REPARATION: ${{ secrets.SHAREPOINT_FOLDER_LINK_REPARATION }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+        run: python -m clean_water.reparation_apres_panne.verify_reparation_apres_panne

@@ -31,4 +31,4 @@ jobs:
           SHAREPOINT_FOLDER_LINK_INSCRIPTION: ${{ secrets.SHAREPOINT_FOLDER_LINK_INSCRIPTION }}
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
-        run: python -m clean_cooking.verify_inscription
+        run: python -m clean_cooking.inscription.verify_inscription

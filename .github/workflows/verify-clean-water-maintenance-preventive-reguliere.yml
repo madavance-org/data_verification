@@ -1,10 +1,10 @@
-name: Vérification de données — Réparation après panne
+name: Vérification de données — Maintenance préventive régulière
 
 on:
   schedule:
-    # Chaque lundi à 07:30 UTC (décalé de 30 min par rapport à verify-carnet-de-bord.yml,
+    # Chaque lundi à 08:00 UTC (décalé de 30 min après verify-reparation-apres-panne.yml,
     # pour éviter un export mWater concurrent)
-    - cron: "30 7 * * 1"
+    - cron: "0 8 * * 1"
   workflow_dispatch: {}
 
 jobs:
@@ -28,7 +28,7 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           SHAREPOINT_FOLDER_LINK: ${{ secrets.SHAREPOINT_FOLDER_LINK }}
-          SHAREPOINT_FOLDER_LINK_REPARATION: ${{ secrets.SHAREPOINT_FOLDER_LINK_REPARATION }}
+          SHAREPOINT_FOLDER_LINK_MAINTENANCE_REGULIERE: ${{ secrets.SHAREPOINT_FOLDER_LINK_MAINTENANCE_REGULIERE }}
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
-        run: python -m reparation_apres_panne.verify_reparation_apres_panne
+        run: python -m clean_water.maintenance_preventive_reguliere.verify_maintenance_preventive_reguliere

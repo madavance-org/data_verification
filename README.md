@@ -2,12 +2,39 @@
 
 Vérification automatisée des données mWater, sur la base des six dimensions du Manuel de vérification de données MadAvance (Complétude, Promptitude, Validité, Unicité, Cohérence, Fiabilité). Un dossier par activité :
 
-- `appel_maintenance_preventive/` — Appel maintenance préventive
-- `maintenance_preventive/` — Maintenance préventive (activité distincte de l'Appel : le formulaire rempli lors de l'intervention elle-même)
-- `carnet_de_bord/` — Carnet de bord (suivi véhicules)
-- `reparation_apres_panne/` — Réparation après panne
-- `premiere_rehabilitation/` — Première réhabilitation (registre des points d'eau : créations, fusions/déduplication)
-- `utils/` — scripts transverses non liés à une seule activité
+Le code est rangé comme dans SharePoint : par entité, puis par activité.
+
+```
+clean_water/
+  appel_maintenance_preventive/
+  maintenance_preventive_reguliere/     (Maintenance préventive régulière + contrôle du format Signal code)
+  reparation_apres_panne/
+  premiere_rehabilitation/              (registre des points d'eau : créations, fusions/déduplication)
+clean_cooking/
+  inscription/
+  distribution/
+  suivi_post_distribution/
+  atelier_reparation/
+  anomaly_log.py                        (log Nouveau / Toujours ouvert / Résolu partagé par les 4 activités)
+carnet_de_bord/                         (Carnet de bord, suivi véhicules)
+common/                                 (code commun à tous les scripts)
+utils/                                  (scripts transverses non liés à une seule activité)
+```
+
+Les workflows GitHub Actions (`.github/workflows/`) ne peuvent pas être rangés en sous-dossiers : ils sont à plat, avec un préfixe d'entité dans leur nom (`verify-clean-water-...`, `verify-clean-cooking-...`).
+
+### Clean Cooking
+
+Les quatre activités tournent chaque lundi, l'une après l'autre (elles téléchargent des datagrids d'environ 90 000 lignes : on évite des exports mWater concurrents). Les règles sont celles des guides « Manuel de vérification — Clean Cooking » de chaque activité ; chaque script lit le datagrid mWater, applique les six dimensions, puis met à jour son log Excel dans le dossier `vérification de données` de l'activité sur SharePoint.
+
+| Activité | Script | Workflow | Heure (UTC) | Secret du dossier de log |
+| --- | --- | --- | --- | --- |
+| Inscription | `clean_cooking/inscription/verify_inscription.py` | `verify-clean-cooking-inscription.yml` | lundi 09:00 | `SHAREPOINT_FOLDER_LINK_INSCRIPTION` |
+| Distribution | `clean_cooking/distribution/verify_distribution.py` | `verify-clean-cooking-distribution.yml` | lundi 10:00 | `SHAREPOINT_FOLDER_LINK_DISTRIBUTION` |
+| Suivi post distribution | `clean_cooking/suivi_post_distribution/verify_suivi_post_distribution.py` | `verify-clean-cooking-suivi-post-distribution.yml` | lundi 11:00 | `SHAREPOINT_FOLDER_LINK_SUIVI_POST_DISTRIBUTION` |
+| Atelier de réparation | `clean_cooking/atelier_reparation/verify_atelier_reparation.py` | `verify-clean-cooking-atelier-reparation.yml` | lundi 12:00 | `SHAREPOINT_FOLDER_LINK_ATELIER_REPARATION` |
+
+Chaque script accepte `DRY_RUN=true` (décompte des anomalies sans toucher à SharePoint ni envoyer d'email). Les écarts assumés avec les guides sont listés dans la docstring de chaque script.
 
 ## Module partagé `common/`
 
@@ -18,12 +45,12 @@ Ce que `common/` ne contient PAS : les six dimensions de vérification (règles 
 Pour que les imports `common.*` fonctionnent, chaque script se lance comme un **module**, depuis la racine du repo — jamais par chemin de fichier direct :
 
 ```bash
-python -m appel_maintenance_preventive.verify_maintenance_preventive   # et pas python appel_maintenance_preventive/verify_maintenance_preventive.py
+python -m clean_water.appel_maintenance_preventive.verify_maintenance_preventive   # et pas python clean_water/appel_maintenance_preventive/verify_maintenance_preventive.py
 ```
 
 Les workflows GitHub Actions (`.github/workflows/*.yml`) utilisent déjà cette syntaxe.
 
-## `appel_maintenance_preventive/`
+## `clean_water/appel_maintenance_preventive/`
 
 ### `verify_maintenance_preventive.py`
 
@@ -119,7 +146,7 @@ export MWATER_USERNAME=... MWATER_PASSWORD=...
 export AZURE_TENANT_ID=... AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=...
 export SHAREPOINT_DRIVE_ID=... SHAREPOINT_FOLDER_ITEM_ID=...
 export EMAIL_SENDER=... EMAIL_RECIPIENTS=...
-python -m appel_maintenance_preventive.verify_maintenance_preventive
+python -m clean_water.appel_maintenance_preventive.verify_maintenance_preventive
 ```
 
 ## Test de validation (logique seule, sans upload)
@@ -130,7 +157,7 @@ La logique de log (Nouveau / Toujours ouvert / Résolu) a été testée par simu
 
 ---
 
-## `maintenance_preventive/check_signal_code_format.py`
+## `clean_water/maintenance_preventive_reguliere/check_signal_code_format.py`
 
 Vérification ponctuelle (workflow_dispatch, pas de cron) du format du champ "Signal code" tel que saisi directement dans le formulaire **Maintenance préventive**, indépendamment de la Validité "Signal reference" déjà vérifiée côté Appel maintenance préventive. Format attendu : `{DEPLOYMENT}_{JJMMAAAA}_{E|S}{N}`. Log dédié `data_verification_signal_code_maintenance_log.xlsx` (même principe Nouveau / Toujours ouvert / Résolu que les autres scripts).
 
@@ -139,14 +166,14 @@ pip install -r requirements.txt
 export MWATER_USERNAME=... MWATER_PASSWORD=...
 export AZURE_TENANT_ID=... AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=...
 export SHAREPOINT_FOLDER_LINK=...
-python -m maintenance_preventive.check_signal_code_format
+python -m clean_water.maintenance_preventive_reguliere.check_signal_code_format
 ```
 
 > Historique : ce script et le contrôle Réparation après panne provenaient d'un unique `check_signal_code_format.py` couvrant les deux formulaires avec un log combiné (`data_verification_signal_code_log.xlsx`, plus mis à jour). Contrairement à Maintenance préventive, la partie Réparation après panne n'est **pas** conservée comme script séparé : sa logique (regex de format, correction automatique, désormais dans `common/signal_code.py`) est reprise dans `reparation_apres_panne/verify_reparation_apres_panne.py` comme dimension Validité, au même titre que les 5 autres dimensions et dans le même log — pas de log séparé pour ce seul contrôle.
 
 ---
 
-## `maintenance_preventive/verify_maintenance_preventive_reguliere.py`
+## `clean_water/maintenance_preventive_reguliere/verify_maintenance_preventive_reguliere.py`
 
 Vérification automatisée des 6 dimensions pour **Maintenance préventive régulière** (formulaire `de26d89a5c8a4452b42158c622be20d0`, datagrid `2cfe0ba7ac264d119cfc8964b5f3cebc`), selon le manuel ClickUp « Maintenance préventive régulière ». Exécution automatique hebdomadaire (lundi 08:00 UTC) ou manuelle via `workflow_dispatch`. Log dédié `data_verification_maintenance_reguliere_log.xlsx`.
 
@@ -156,7 +183,7 @@ Vérification automatisée des 6 dimensions pour **Maintenance préventive régu
 - **Registre mWater** : met à jour la ligne existante (clé Response Code + Dimension + Sous-dimension + Description) au lieu d'en recréer une à chaque exécution. Déploiement « Maintenance préventive régulière » du formulaire registre : `69d1692f3cbd424abdbb86c883b8fde4` ; même énumérateur autorisé que les autres activités.
 
 ```bash
-python -m maintenance_preventive.verify_maintenance_preventive_reguliere
+python -m clean_water.maintenance_preventive_reguliere.verify_maintenance_preventive_reguliere
 ```
 
 ### ⚠️ À valider avant mise en production
@@ -165,7 +192,7 @@ python -m maintenance_preventive.verify_maintenance_preventive_reguliere
 
 ---
 
-## `reparation_apres_panne/verify_reparation_apres_panne.py`
+## `clean_water/reparation_apres_panne/verify_reparation_apres_panne.py`
 
 Vérification automatisée des données mWater pour l'activité **Réparation après panne**, sur les 6 dimensions. Couvre le formulaire actif et, filtrées sur `Type de travaux`, les réponses historiques de l'ancien formulaire combiné (inactif).
 
@@ -173,7 +200,7 @@ Différences avec `verify_maintenance_preventive.py` (Appel) :
 - Pas de sous-règle Promptitude sur le délai de réparation (pas de délai de référence défini) — seule la chronologie Drafted On/Submitted On est vérifiée.
 - La règle de Cohérence déjà couverte côté Appel (signal code présent dans Appel avec pompe "No", date embarquée ≤ date de complétion) n'est pas réimplémentée ici, pour éviter le doublon de calcul/log. Seule la cohérence interne au formulaire est vérifiée : présence/absence des champs conditionnels (`Is the repair succesfull ?`, `Completion date of the work`) selon `Is the repair possible ?`.
 - Fichier de log dédié (`data_verification_reparation_log.xlsx`), distinct de celui d'Appel — décision du 14/09/2026 de ne pas partager un seul fichier entre activités.
-- Format Signal code (dimension Validité, avec correction automatique proposée) : logique reprise de `common/signal_code.py`, la même que `maintenance_preventive/check_signal_code_format.py`.
+- Format Signal code (dimension Validité, avec correction automatique proposée) : logique reprise de `common/signal_code.py`, la même que `clean_water/maintenance_preventive_reguliere/check_signal_code_format.py`.
 
 Exécution automatique hebdomadaire via GitHub Actions (lundi 07:30 UTC), ou manuelle via `workflow_dispatch`. Insertion parallèle dans le même formulaire mWater dédié qu'Appel (`1febfeabe8054be6979350b81d1652fe`), avec le déploiement propre à Réparation après panne (`8b541444ac4e465bb93d0aad0d4dff68`, donné par Lanja le 14/09/2026) et le même énumérateur qu'Appel (Lanja est aussi la personne autorisée sur ce déploiement) — pas encore testée en conditions réelles (l'insertion mWater reste non bloquante : si elle échoue, le fichier Excel/SharePoint reste la source fiable).
 
@@ -188,7 +215,7 @@ export MWATER_USERNAME=... MWATER_PASSWORD=...
 export AZURE_TENANT_ID=... AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=...
 export SHAREPOINT_FOLDER_LINK=...
 export EMAIL_SENDER=... EMAIL_RECIPIENTS=...
-python -m reparation_apres_panne.verify_reparation_apres_panne
+python -m clean_water.reparation_apres_panne.verify_reparation_apres_panne
 ```
 
 ---
@@ -224,13 +251,13 @@ python -m carnet_de_bord.verify_carnet_de_bord
 
 ---
 
-## `premiere_rehabilitation/find_merged_water_points.py`
+## `clean_water/premiere_rehabilitation/find_merged_water_points.py`
 
 Diagnostic ponctuel (pas de workflow dédié, exécution manuelle en local), rattaché à Première réhabilitation car il porte sur le registre des points d'eau (créations, fusions/déduplication) plutôt que sur une activité de terrain en particulier — bien que les cas qu'il examine proviennent des réponses **Appel maintenance préventive**. Pour ces réponses dont le Water Point ID est vide dans le datagrid, détermine si le point d'eau réellement saisi a depuis été fusionné (`_merged_entities`) dans une autre entité mWater plutôt que supprimé ou jamais renseigné.
 
 ```bash
 export MWATER_USERNAME=... MWATER_PASSWORD=...
-python -m premiere_rehabilitation.find_merged_water_points --csv sortie.csv
+python -m clean_water.premiere_rehabilitation.find_merged_water_points --csv sortie.csv
 ```
 
 ---

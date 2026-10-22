@@ -1,14 +1,10 @@
-name: Vérification de données — Maintenance préventive régulière
+name: Vérification ponctuelle — Format Signal code (Maintenance préventive)
 
 on:
-  schedule:
-    # Chaque lundi à 08:00 UTC (décalé de 30 min après verify-reparation-apres-panne.yml,
-    # pour éviter un export mWater concurrent)
-    - cron: "0 8 * * 1"
   workflow_dispatch: {}
 
 jobs:
-  verify:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +16,7 @@ jobs:
       - name: Installer les dépendances
         run: pip install -r requirements.txt
 
-      - name: Lancer la vérification
+      - name: Vérifier le format des Signal code
         env:
           MWATER_USERNAME: ${{ secrets.MWATER_USERNAME }}
           MWATER_PASSWORD: ${{ secrets.MWATER_PASSWORD }}
@@ -29,6 +25,4 @@ jobs:
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           SHAREPOINT_FOLDER_LINK: ${{ secrets.SHAREPOINT_FOLDER_LINK }}
           SHAREPOINT_FOLDER_LINK_MAINTENANCE_REGULIERE: ${{ secrets.SHAREPOINT_FOLDER_LINK_MAINTENANCE_REGULIERE }}
-          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
-          EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
-        run: python -m maintenance_preventive.verify_maintenance_preventive_reguliere
+        run: python -m clean_water.maintenance_preventive_reguliere.check_signal_code_format

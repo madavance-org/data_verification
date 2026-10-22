@@ -31,4 +31,4 @@ jobs:
           SHAREPOINT_FOLDER_LINK_DISTRIBUTION: ${{ secrets.SHAREPOINT_FOLDER_LINK_DISTRIBUTION }}
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
-        run: python -m clean_cooking.verify_distribution
+        run: python -m clean_cooking.distribution.verify_distribution

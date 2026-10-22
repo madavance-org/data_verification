@@ -30,4 +30,4 @@ jobs:
           SHAREPOINT_FOLDER_LINK_APPEL: ${{ secrets.SHAREPOINT_FOLDER_LINK_APPEL }}
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
-        run: python -m appel_maintenance_preventive.verify_maintenance_preventive
+        run: python -m clean_water.appel_maintenance_preventive.verify_maintenance_preventive

@@ -4,7 +4,7 @@ Vérification ponctuelle — Format des Signal code (Maintenance préventive)
 ==========================================================================
 
 Contrôle indépendant de la Validité "Signal reference" déjà faite dans
-appel_maintenance_preventive/verify_maintenance_preventive.py (qui ne porte
+clean_water/appel_maintenance_preventive/verify_maintenance_preventive.py (qui ne porte
 que sur Appel maintenance préventive) : ici, on vérifie le champ "Signal
 code" tel que saisi directement dans le formulaire Maintenance préventive,
 pour repérer les codes qui ne respectent pas le format

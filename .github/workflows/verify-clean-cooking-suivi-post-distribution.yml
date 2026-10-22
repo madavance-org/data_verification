@@ -31,4 +31,4 @@ jobs:
           SHAREPOINT_FOLDER_LINK_SUIVI_POST_DISTRIBUTION: ${{ secrets.SHAREPOINT_FOLDER_LINK_SUIVI_POST_DISTRIBUTION }}
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
-        run: python -m clean_cooking.verify_suivi_post_distribution
+        run: python -m clean_cooking.suivi_post_distribution.verify_suivi_post_distribution

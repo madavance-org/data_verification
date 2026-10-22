@@ -13,7 +13,7 @@ réponses "Appel maintenance préventive" concernées, en la rendant rejouable d
 fusions continuent de se produire) plutôt que figée à la liste trouvée ce jour-là.
 
 Usage (depuis la racine du repo) :
-    python -m premiere_rehabilitation.find_merged_water_points [--csv sortie.csv]
+    python -m clean_water.premiere_rehabilitation.find_merged_water_points [--csv sortie.csv]
 
 Variables d'environnement requises : MWATER_USERNAME, MWATER_PASSWORD.
 """
