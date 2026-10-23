@@ -1,0 +1,35 @@
+name: Archivage des photos — Clean Cooking Inscription
+
+on:
+  schedule:
+    # Une fois par mois : le 6 à 03:00 UTC. Le script est incrémental (registre photos_archivees.json
+    # dans le dossier photos de SharePoint) : il n'archive que les nouvelles photos.
+    - cron: "0 3 6 * *"
+  # Lancement manuel : nécessaire pour terminer le premier archivage complet (~680 000 photos), qui
+  # demande de nombreux passages de 5 h, chacun reprenant là où le précédent s'est arrêté.
+  workflow_dispatch: {}
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+
+      - name: Archiver les photos de l'Inscription
+        env:
+          MAX_RUNTIME_MINUTES: "320"
+          MWATER_USERNAME: ${{ secrets.MWATER_USERNAME }}
+          MWATER_PASSWORD: ${{ secrets.MWATER_PASSWORD }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SHAREPOINT_FOLDER_LINK_INSCRIPTION_PHOTOS: ${{ secrets.SHAREPOINT_FOLDER_LINK_INSCRIPTION_PHOTOS }}
+        run: python -m clean_cooking.inscription.extract_photos
